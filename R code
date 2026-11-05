@@ -1,0 +1,1653 @@
+## =====================================================================
+## paper_conformal  |  step01-09 (figure step 05 runs last)
+## Conformal prediction sets for authorship attribution (ELTeC English, French, German)
+## =====================================================================
+
+## ---------- 0. Setup ----------
+pk <- c("xml2", "jsonlite", "openxlsx")                       # packages needed
+for (p in pk) if (!requireNamespace(p, quietly = TRUE)) install.packages(p)  # install if missing
+library(xml2); library(jsonlite); library(openxlsx)          # load packages
+set.seed(2026)                                                # reproducible sampling
+
+base_dir <- if (dir.exists("C:/Users/Alper.Tosun/Desktop/cru130")) {   # main machine
+  "C:/Users/Alper.Tosun/Desktop/cru130"
+} else {
+  "C:/Users/autos/OneDrive/Desktop/cru130"                    # fallback machine
+}
+out_dir <- file.path(base_dir, "paper_conformal")             # project folder
+if (!dir.exists(out_dir)) dir.create(out_dir)                 # create once
+corpus_csv <- file.path(out_dir, "step01_eltec_eng_texts.csv")  # cached corpus file
+
+## =====================================================================
+## STEP 01 - Download and parse ELTeC English (skipped if cache exists)
+## =====================================================================
+if (!file.exists(corpus_csv)) {
+
+  tmp <- file.path(tempdir(), "eltec")                        # temp folder (auto-cleaned by R)
+  dir.create(tmp, showWarnings = FALSE)                       # make temp folder
+  xml_files <- character(0)                                   # list of TEI files
+
+  ## ---- Yol A: download the whole repository as a zip ----
+  okA <- FALSE                                                # flag for success
+  for (br in c("master", "main")) {                           # try both branch names
+    zurl <- sprintf("https://github.com/COST-ELTeC/ELTeC-eng/archive/refs/heads/%s.zip", br)  # zip url
+    zf <- file.path(tmp, "eng.zip")                           # local zip path
+    r <- try(download.file(zurl, zf, mode = "wb", quiet = TRUE), silent = TRUE)  # download
+    if (!inherits(r, "try-error") && file.exists(zf) && file.size(zf) > 1e6) {    # zip is real
+      unzip(zf, exdir = tmp)                                  # extract files
+      f_all <- list.files(tmp, pattern = "^ENG.*\\.xml$", recursive = TRUE, full.names = TRUE)  # all TEI
+      f_l1 <- f_all[grepl("level1", f_all)]                   # keep level-1 encoding
+      xml_files <- if (length(f_l1) > 0) f_l1 else f_all      # fall back to any level
+      xml_files <- xml_files[!duplicated(basename(xml_files))]  # one file per novel
+      if (length(xml_files) > 0) { okA <- TRUE; break }       # stop if found
+    }
+  }
+
+  ## ---- Yol B: list files with GitHub API and download one by one ----
+  if (!okA) {
+    lst <- fromJSON("https://api.github.com/repos/COST-ELTeC/ELTeC-eng/contents/level1")  # file list
+    lst <- lst[grepl("\\.xml$", lst$name), ]                  # keep XML files only
+    for (i in seq_len(nrow(lst))) {                           # loop over novels
+      dest <- file.path(tmp, lst$name[i])                     # local path
+      try(download.file(lst$download_url[i], dest, mode = "wb", quiet = TRUE), silent = TRUE)  # download
+    }
+    xml_files <- list.files(tmp, pattern = "^ENG.*\\.xml$", full.names = TRUE)  # downloaded files
+  }
+  cat("TEI files found:", length(xml_files), "\n")            # report count
+
+  ## ---- parse one TEI file into one row ----
+  parse_one <- function(f) {
+    doc <- read_xml(f)                                        # read XML
+    xml_ns_strip(doc)                                         # remove namespaces for easy paths
+    au <- xml_text(xml_find_first(doc, "//teiHeader//titleStmt/author"))  # author string
+    ti <- xml_text(xml_find_first(doc, "//teiHeader//titleStmt/title"))   # title string
+    bd <- xml_text(xml_find_first(doc, "//text/body"))        # novel body text
+    id <- sub("\\.xml$", "", basename(f))                     # novel id from file name
+    au <- trimws(gsub("\\s+", " ", sub("\\(.*$", "", au)))    # drop life dates, tidy spaces
+    data.frame(id = id, author = au, title = trimws(ti),
+               year = suppressWarnings(as.integer(substr(id, 4, 7))),  # year from id (ENGyyyy)
+               text = bd, stringsAsFactors = FALSE)
+  }
+  corp <- do.call(rbind, lapply(xml_files, parse_one))        # parse all novels
+  write.csv(corp, corpus_csv, row.names = FALSE, fileEncoding = "UTF-8")  # cache corpus
+}
+
+## ---- read cached corpus (no re-download) ----
+corp <- tryCatch(
+  read.csv(corpus_csv, stringsAsFactors = FALSE, encoding = "UTF-8"),            # Yol A: keep bytes, mark as UTF-8
+  error = function(e)
+    read.csv(corpus_csv, stringsAsFactors = FALSE, fileEncoding = "UTF-8"))      # Yol B: re-encode while reading
+
+## ---- repair text encoding (fixes "invalid UTF-8" error on Windows) ----
+fix_utf8 <- function(x) {
+  y <- iconv(x, from = "UTF-8", to = "UTF-8", sub = " ")      # Yol A: replace invalid UTF-8 bytes
+  bad <- is.na(y)                                             # strings still unreadable
+  if (any(bad)) y[bad] <- iconv(x[bad], from = "latin1", to = "UTF-8", sub = " ")  # Yol B: read as latin1
+  enc2utf8(y)                                                 # mark everything as UTF-8
+}
+for (v in c("author", "title", "text")) corp[[v]] <- fix_utf8(corp[[v]])  # clean the text columns
+
+## ---- tokenizer: lower case, letters and apostrophes only ----
+tok <- function(x) {
+  w <- tryCatch(
+    gsub("[^\\p{L}']+", " ", tolower(x), perl = TRUE),        # Yol A: Unicode letters
+    error = function(e) {
+      y <- iconv(x, from = "UTF-8", to = "ASCII//TRANSLIT", sub = " ")  # Yol B: convert to ASCII
+      gsub("[^a-z']+", " ", tolower(y))                       # keep a-z letters only
+    })
+  w <- strsplit(w, "\\s+")[[1]]                               # split on spaces
+  w[nchar(w) > 0]                                             # drop empty tokens
+}
+toks <- lapply(corp$text, tok)                                # tokenize every novel
+names(toks) <- corp$id                                        # name by novel id
+corp$n_words <- lengths(toks)                                 # words per novel
+
+auth_n <- table(corp$author)                                  # novels per author
+cand_auth <- names(auth_n)[auth_n >= 2]                       # candidates: >= 2 novels
+corp$role <- ifelse(corp$author %in% cand_auth, "candidate", "outsider")  # outsiders = 1 novel
+
+## ---- step01 summary output ----
+wb1 <- createWorkbook()                                       # new workbook
+addWorksheet(wb1, "novels")                                   # sheet 1
+writeData(wb1, "novels", corp[, c("id", "author", "title", "year", "n_words", "role")])  # novel table
+auth_tab <- aggregate(n_words ~ author + role, data = corp, FUN = length)  # novels per author
+names(auth_tab)[3] <- "n_novels"                              # rename column
+addWorksheet(wb1, "authors")                                  # sheet 2
+writeData(wb1, "authors", auth_tab[order(-auth_tab$n_novels), ])  # author table
+saveWorkbook(wb1, file.path(out_dir, "step01_corpus_summary.xlsx"), overwrite = TRUE)  # save
+cat("Candidate authors:", length(cand_auth),
+    "| candidate novels:", sum(corp$role == "candidate"),
+    "| outsider novels:", sum(corp$role == "outsider"), "\n")  # quick report
+
+## =====================================================================
+## STEP 02 - Chunks, Cosine Delta scores, conformal sets
+## Methods for calibration scores:
+##   naive        : author profile INCLUDES the chunk's own novel (ignores book clustering)
+##   crossfit_all : profile EXCLUDES the chunk's own novel, all chunks used
+##   crossfit_one : as crossfit_all, but ONE random chunk per novel (novel-level exchangeability)
+## =====================================================================
+N_MFW <- 200                                                  # most frequent words used
+L_set <- c(250, 500, 1000, 2000, 5000)                        # chunk lengths (words)
+CAP   <- 30                                                   # max chunks per novel
+ALPHA <- 0.10                                                 # target miscoverage (90% sets)
+
+all_cand <- unlist(toks[corp$role == "candidate"], use.names = FALSE)  # candidate tokens
+mfw <- names(sort(table(all_cand), decreasing = TRUE))[1:N_MFW]        # MFW list
+rm(all_cand)                                                  # free memory
+
+## ---- cut a novel into non-overlapping contiguous chunks ----
+make_chunks <- function(w, L, cap) {
+  k <- floor(length(w) / L)                                   # number of full chunks
+  if (k < 1) return(list())                                   # novel too short
+  idx <- seq_len(k)                                           # chunk positions
+  if (k > cap) idx <- sort(sample(idx, cap))                  # random subset if too many
+  lapply(idx, function(j) w[((j - 1) * L + 1):(j * L)])       # chunk word vectors
+}
+
+## ---- conformal quantile with finite-sample correction ----
+qconf <- function(s, a) {
+  s <- s[is.finite(s)]                                        # drop missing scores
+  n <- length(s)                                              # calibration size
+  k <- ceiling((n + 1) * (1 - a))                             # conformal rank
+  if (n == 0 || k > n) return(Inf) else sort(s)[k]            # Inf = include every author
+}
+
+## ---- cosine distance between rows of Z and rows of P ----
+cosd <- function(Z, P) {
+  Zn <- Z / sqrt(rowSums(Z^2))                                # unit-length chunks
+  Pn <- P / sqrt(rowSums(P^2))                                # unit-length profiles
+  1 - Zn %*% t(Pn)                                            # chunk x author distance
+}
+
+## ---- step02 runs only if its output does not exist yet (already done -> skipped) ----
+f02 <- file.path(out_dir, "step02_conformal_results.xlsx")    # step02 output file
+if (!file.exists(f02)) {
+  res_closed <- list()                                          # closed-set results
+  res_open   <- list()                                          # open-set results
+
+  for (L in L_set) {
+    cat("Chunk length L =", L, "\n")                            # progress
+
+    ## ---- build chunk feature matrix ----
+    ch_list <- lapply(corp$id, function(id) make_chunks(toks[[id]], L, CAP))  # chunks per novel
+    n_ch <- lengths(ch_list)                                    # chunks per novel
+    meta <- data.frame(id = rep(corp$id, n_ch),
+                       author = rep(corp$author, n_ch),
+                       role = rep(corp$role, n_ch), stringsAsFactors = FALSE)  # chunk metadata
+    X <- do.call(rbind, lapply(unlist(ch_list, recursive = FALSE),
+           function(ch) tabulate(match(ch, mfw), nbins = N_MFW) / L))  # relative MFW frequencies
+    rm(ch_list)                                                 # free memory
+
+    ## ---- helper: z-score with stats from training rows only ----
+    zfit <- function(tr) {
+      mu <- colMeans(X[tr, , drop = FALSE])                     # feature means
+      sdv <- apply(X[tr, , drop = FALSE], 2, sd)                # feature sds
+      sdv[!is.finite(sdv) | sdv == 0] <- 1                      # guard zero sd
+      sweep(sweep(X, 2, mu), 2, sdv, "/")                       # z-scores for all rows
+    }
+
+    ## ---- helper: calibration scores and profiles from candidate rows ----
+    calib <- function(Z, trc) {
+      S <- rowsum(Z[trc, , drop = FALSE], meta$id[trc])        # sum of z per novel
+      cnt <- as.vector(table(meta$id[trc])[rownames(S)])        # chunks per novel
+      na <- corp$author[match(rownames(S), corp$id)]            # author of each novel
+      Sa <- rowsum(S, na)                                       # sum per author
+      Na <- tapply(cnt, na, sum)[rownames(Sa)]                  # chunks per author
+      P <- Sa / as.vector(Na)                                   # full author profiles
+      Zt <- Z[trc, , drop = FALSE]                              # candidate training chunks
+      D0 <- cosd(Zt, P)                                         # distance to every profile
+      s_naive <- D0[cbind(seq_len(nrow(Zt)), match(meta$author[trc], rownames(P)))]  # own author, own novel inside
+      s_cf <- rep(NA_real_, nrow(Zt))                           # cross-fit scores
+      idt <- meta$id[trc]                                       # novel id per chunk
+      for (m in rownames(S)) {                                  # leave one novel out
+        a <- na[rownames(S) == m]                               # its author
+        nleft <- Na[a] - cnt[rownames(S) == m]                  # chunks left for profile
+        if (nleft <= 0) next                                    # author has no other novel
+        pm <- (Sa[a, ] - S[m, ]) / nleft                        # profile without this novel
+        ii <- which(idt == m)                                   # chunks of this novel
+        zi <- Zt[ii, , drop = FALSE]                            # their z-scores
+        s_cf[ii] <- 1 - (zi %*% pm) / (sqrt(rowSums(zi^2)) * sqrt(sum(pm^2)))  # cosine distance
+      }
+      ok <- which(is.finite(s_cf))                              # usable cross-fit chunks
+      one <- tapply(ok, idt[ok], function(v) v[sample.int(length(v), 1)])  # one chunk per novel
+      list(P = P,
+           q = c(naive = qconf(s_naive, ALPHA),
+                 crossfit_all = qconf(s_cf, ALPHA),
+                 crossfit_one = qconf(s_cf[unlist(one)], ALPHA)))  # three conformal thresholds
+    }
+
+    ## ---- CLOSED SET: leave one candidate novel out ----
+    for (nstar in corp$id[corp$role == "candidate"]) {
+      te <- which(meta$id == nstar)                             # test chunks
+      if (length(te) == 0) next                                 # novel shorter than L
+      tr <- meta$id != nstar                                    # training rows
+      Z <- zfit(tr)                                             # z-scores from training rows
+      trc <- tr & meta$role == "candidate"                      # candidate training rows
+      cb <- calib(Z, trc)                                       # profiles and thresholds
+      true_a <- meta$author[te[1]]                              # true author
+      if (!(true_a %in% rownames(cb$P))) next                   # author has no other novel
+      D <- cosd(Z[te, , drop = FALSE], cb$P)                    # test distances
+      for (mth in names(cb$q)) {                                # each calibration method
+        inset <- D <= cb$q[mth]                                 # prediction set membership
+        res_closed[[length(res_closed) + 1]] <- data.frame(
+          L = L, method = mth, novel = nstar, author = true_a,
+          chunk = seq_along(te),
+          covered = inset[, true_a],                            # true author in set?
+          set_size = rowSums(inset),                            # number of authors in set
+          n_candidates = ncol(inset))
+      }
+    }
+
+    ## ---- OPEN SET: outsider novels (true author not a candidate) ----
+    for (ostar in corp$id[corp$role == "outsider"]) {
+      te <- which(meta$id == ostar)                             # outsider chunks
+      if (length(te) == 0) next                                 # too short
+      tr <- meta$id != ostar                                    # training rows
+      Z <- zfit(tr)                                             # z-scores
+      trc <- tr & meta$role == "candidate"                      # all candidate rows
+      cb <- calib(Z, trc)                                       # profiles and thresholds
+      D <- cosd(Z[te, , drop = FALSE], cb$P)                    # distances to candidates
+      for (mth in names(cb$q)) {
+        inset <- D <= cb$q[mth]                                 # set membership
+        res_open[[length(res_open) + 1]] <- data.frame(
+          L = L, method = mth, novel = ostar,
+          author = meta$author[te[1]], chunk = seq_along(te),
+          empty = rowSums(inset) == 0,                          # correct answer: empty set
+          set_size = rowSums(inset))
+      }
+    }
+  }
+
+  closed <- do.call(rbind, res_closed)                          # stack closed-set rows
+  openr  <- do.call(rbind, res_open)                            # stack open-set rows
+
+  ## ---- summaries ----
+  closed$singleton <- closed$set_size == 1                      # set has exactly one author
+  closed$empty     <- closed$set_size == 0                      # known author wrongly rejected
+  sum_closed <- aggregate(cbind(covered, set_size, singleton, empty) ~ L + method,
+                          data = closed, FUN = mean)            # coverage and set size
+  nov_cov <- aggregate(covered ~ L + method + novel, data = closed, FUN = mean)  # coverage per novel
+  sum_novel <- aggregate(covered ~ L + method, data = nov_cov,
+                         FUN = function(v) mean(v < 1 - ALPHA)) # share of novels under-covered
+  names(sum_novel)[3] <- "share_novels_below_target"            # rename
+  sum_author <- aggregate(covered ~ L + method + author, data = closed, FUN = mean)  # author-conditional coverage
+  openr$false_single <- openr$set_size == 1                     # outsider assigned to one candidate
+  sum_open <- aggregate(cbind(empty, false_single, set_size) ~ L + method,
+                        data = openr, FUN = mean)               # open-set behaviour
+
+  ## ---- step02 output ----
+  wb2 <- createWorkbook()                                       # new workbook
+  addWorksheet(wb2, "closed_summary");   writeData(wb2, "closed_summary", sum_closed)     # main table
+  addWorksheet(wb2, "closed_by_novel");  writeData(wb2, "closed_by_novel", sum_novel)    # novel-level
+  addWorksheet(wb2, "closed_by_author"); writeData(wb2, "closed_by_author", sum_author)  # author-level
+  addWorksheet(wb2, "open_summary");     writeData(wb2, "open_summary", sum_open)        # open-set
+  addWorksheet(wb2, "closed_chunks");    writeData(wb2, "closed_chunks", closed)         # raw rows
+  addWorksheet(wb2, "open_chunks");      writeData(wb2, "open_chunks", openr)            # raw rows
+  addWorksheet(wb2, "settings")                                 # run settings
+  writeData(wb2, "settings", data.frame(
+    item = c("N_MFW", "L_set", "CAP", "ALPHA", "n_candidate_authors", "seed"),
+    value = c(N_MFW, paste(L_set, collapse = ","), CAP, ALPHA, length(cand_auth), 2026)))
+  saveWorkbook(wb2, file.path(out_dir, "step02_conformal_results.xlsx"), overwrite = TRUE)  # save
+  print(sum_closed); print(sum_open)                            # show results in console
+} else cat("STEP 02 skipped: step02_conformal_results.xlsx already exists\n")
+
+## =====================================================================
+## STEP 03
+##  (a) novel-level cluster bootstrap CIs for the step02 results
+##  (b) hierarchical conformal variants (Dunn, Wasserman & Ramdas 2023):
+##        single_sub : one chunk per novel, conformal quantile (exact >= 1-alpha)
+##        cdf_pool   : novel-averaged empirical CDF quantile (asymptotic 1-alpha)
+##        rep_sub    : average of B single-subsample p-values (>= 1-2alpha)
+##  (c) author-specific (Mondrian) thresholds:
+##        mondrian_chunk : per-author quantile of all cross-fit chunks
+##        mondrian_book  : per-author quantile, one chunk per novel
+##  (d) book effect on top-1 accuracy: chunk-level vs book-level split
+## =====================================================================
+set.seed(2027)                                                # step03 has its own seed
+B_BOOT <- 2000                                                # bootstrap replicates
+B_REP  <- 200                                                 # subsamples for rep_sub
+N_SPLIT <- 5                                                  # repeats of the chunk-level split
+
+## ---- read step02 chunk-level results (Yol A: openxlsx, Yol B: readxl) ----
+read_sheet <- function(f, s) {
+  tryCatch(read.xlsx(f, sheet = s),                           # Yol A
+    error = function(e) {
+      if (!requireNamespace("readxl", quietly = TRUE)) install.packages("readxl")  # install if missing
+      as.data.frame(readxl::read_excel(f, sheet = s))         # Yol B
+    })
+}
+## ---- (a) cluster bootstrap: resample whole novels, not chunks ----
+boot_ci <- function(df, metrics, B = B_BOOT) {
+  out <- list()
+  for (g in split(df, list(df$L, df$method), drop = TRUE)) {  # each length x method cell
+    nov <- unique(g$novel)                                    # novels in this cell
+    S <- rowsum(as.matrix(g[, metrics, drop = FALSE]) * 1, g$novel)[nov, , drop = FALSE]  # metric sums per novel
+    n <- as.vector(table(g$novel)[nov])                       # chunks per novel
+    est <- colSums(S) / sum(n)                                # point estimate (chunk mean)
+    bs <- replicate(B, {
+      i <- sample.int(length(nov), replace = TRUE)            # draw novels with replacement
+      colSums(S[i, , drop = FALSE]) / sum(n[i])               # re-computed means
+    })
+    bs <- matrix(bs, nrow = length(metrics))                  # metrics x B
+    out[[length(out) + 1]] <- data.frame(
+      L = g$L[1], method = g$method[1], metric = metrics,
+      estimate = est,
+      ci_low  = apply(bs, 1, quantile, 0.025),                # 2.5% percentile
+      ci_high = apply(bs, 1, quantile, 0.975),                # 97.5% percentile
+      n_novels = length(nov), row.names = NULL)
+  }
+  r <- do.call(rbind, out)                                    # stack cells
+  r[order(r$metric, r$method, r$L), ]                         # tidy order
+}
+## ---- helpers for (b)-(d) ----
+build_chunks <- function(L) {                                 # chunk matrix for one length
+  ch_list <- lapply(corp$id, function(id) make_chunks(toks[[id]], L, CAP))  # chunks per novel
+  n_ch <- lengths(ch_list)                                    # chunks per novel
+  meta <- data.frame(id = rep(corp$id, n_ch), author = rep(corp$author, n_ch),
+                     role = rep(corp$role, n_ch), stringsAsFactors = FALSE)  # chunk metadata
+  X <- do.call(rbind, lapply(unlist(ch_list, recursive = FALSE),
+         function(ch) tabulate(match(ch, mfw), nbins = N_MFW) / L))  # relative MFW frequencies
+  list(X = X, meta = meta)
+}
+zfit3 <- function(X, tr) {                                    # z-scores, stats from training rows
+  mu <- colMeans(X[tr, , drop = FALSE])                       # feature means
+  sdv <- apply(X[tr, , drop = FALSE], 2, sd)                  # feature sds
+  sdv[!is.finite(sdv) | sdv == 0] <- 1                        # guard zero sd
+  sweep(sweep(X, 2, mu), 2, sdv, "/")                         # z-scores for all rows
+}
+calib3 <- function(Z, trc, meta) {                            # profiles + cross-fit scores
+  S <- rowsum(Z[trc, , drop = FALSE], meta$id[trc])          # z sums per novel
+  cnt <- as.vector(table(meta$id[trc])[rownames(S)])          # chunks per novel
+  na <- corp$author[match(rownames(S), corp$id)]              # author per novel
+  Sa <- rowsum(S, na)                                         # z sums per author
+  Na <- tapply(cnt, na, sum)[rownames(Sa)]                    # chunks per author
+  P <- Sa / as.vector(Na)                                     # author profiles
+  Zt <- Z[trc, , drop = FALSE]                                # candidate training chunks
+  idt <- meta$id[trc]                                         # novel of each chunk
+  s <- rep(NA_real_, nrow(Zt))                                # cross-fit scores
+  for (m in rownames(S)) {                                    # leave one novel out
+    a <- na[rownames(S) == m]                                 # its author
+    nleft <- Na[a] - cnt[rownames(S) == m]                    # chunks left for the profile
+    if (nleft <= 0) next                                      # author has no other novel
+    pm <- (Sa[a, ] - S[m, ]) / nleft                          # profile without this novel
+    ii <- which(idt == m)                                     # chunks of this novel
+    zi <- Zt[ii, , drop = FALSE]                              # their z-scores
+    s[ii] <- 1 - (zi %*% pm) / (sqrt(rowSums(zi^2)) * sqrt(sum(pm^2)))  # cosine distance
+  }
+  ok <- is.finite(s)                                          # usable scores
+  list(P = P, s = s[ok], novel = idt[ok], auth = meta$author[trc][ok])
+}
+qpool <- function(s, g, a) {                                  # novel-averaged CDF quantile (CDF pooling)
+  w <- 1 / (length(unique(g)) * as.vector(table(g)[g]))       # each novel gets equal total weight
+  o <- order(s)                                               # sort scores
+  cw <- cumsum(w[o])                                          # pooled CDF
+  s[o][which(cw >= 1 - a - 1e-12)[1]]                         # first score reaching 1-alpha
+}
+pval_mat <- function(D, s1) {                                 # conformal p-values of test distances
+  s1 <- sort(s1); k <- length(s1)                             # calibration scores
+  ge <- k - findInterval(D, s1, left.open = TRUE)             # number of scores >= D
+  matrix((1 + ge) / (k + 1), nrow = nrow(D), dimnames = dimnames(D))  # p-value matrix
+}
+pick_one <- function(g) {                                     # index of one random chunk per novel
+  unlist(tapply(seq_along(g), g, function(v) v[sample.int(length(v), 1)]), use.names = FALSE)
+}
+top1 <- function(D) colnames(D)[max.col(-D, ties.method = "first")]  # nearest author
+
+## ---- step03 runs only if its output does not exist yet (already done -> skipped) ----
+f03 <- file.path(out_dir, "step03_results.xlsx")             # step03 output file
+if (!file.exists(f03)) {
+  cl02 <- read_sheet(f02, "closed_chunks")                      # closed-set rows from step02
+  op02 <- read_sheet(f02, "open_chunks")                        # open-set rows from step02
+  for (v in c("covered", "empty", "false_single")) {            # make 0/1 columns numeric
+    if (v %in% names(cl02)) cl02[[v]] <- as.numeric(as.logical(cl02[[v]]))
+    if (v %in% names(op02)) op02[[v]] <- as.numeric(as.logical(op02[[v]]))
+  }
+  cl02$singleton <- as.numeric(cl02$set_size == 1)              # one-author set
+  cl02$empty     <- as.numeric(cl02$set_size == 0)              # empty set
+  op02$false_single <- as.numeric(op02$set_size == 1)           # outsider given one author
+  op02$empty        <- as.numeric(op02$set_size == 0)           # outsider correctly rejected
+
+  boot02_closed <- boot_ci(cl02, c("covered", "set_size", "singleton", "empty"))  # step02 closed set
+  boot02_open   <- boot_ci(op02, c("empty", "false_single", "set_size"))          # step02 open set
+
+  ## ---- (b)-(d) main loop ----
+  res3 <- list(); acc3 <- list()                                # result containers
+  for (L in L_set) {
+    cat("STEP 03, chunk length L =", L, "\n")                   # progress
+    bc <- build_chunks(L); X <- bc$X; meta <- bc$meta           # chunks for this length
+
+    ## ---- closed set, leave one candidate novel out ----
+    for (nstar in corp$id[corp$role == "candidate"]) {
+      te <- which(meta$id == nstar)                             # test chunks
+      if (length(te) == 0) next                                 # novel shorter than L
+      tr <- meta$id != nstar                                    # training rows
+      Z <- zfit3(X, tr)                                         # z-scores
+      trc <- tr & meta$role == "candidate"                      # candidate training rows
+      cb <- calib3(Z, trc, meta)                                # profiles and scores
+      true_a <- meta$author[te[1]]                              # true author
+      if (!(true_a %in% rownames(cb$P))) next                   # author has no other novel
+      D <- cosd(Z[te, , drop = FALSE], cb$P)                    # test distances
+
+      psum <- 0                                                 # running sum of p-values
+      for (b in seq_len(B_REP)) {                               # repeated subsampling
+        one <- pick_one(cb$novel)                               # one chunk per novel
+        psum <- psum + pval_mat(D, cb$s[one])                   # add this subsample's p-values
+      }
+      pbar <- psum / B_REP                                      # averaged p-values
+      one <- pick_one(cb$novel)                                 # fresh single subsample
+      q_single <- qconf(cb$s[one], ALPHA)                       # single subsampling threshold
+      q_pool <- qpool(cb$s, cb$novel, ALPHA)                    # CDF pooling threshold
+      q_mch <- tapply(cb$s, cb$auth, qconf, a = ALPHA)[colnames(D)]  # per-author, all chunks
+      q_mch[is.na(q_mch)] <- Inf                                # no scores -> include author
+      q_mbk <- sapply(colnames(D), function(a)
+        qconf(cb$s[one][cb$auth[one] == a], ALPHA))             # per-author, one chunk per novel
+
+      sets <- list(single_sub     = D <= q_single,              # Dunn et al. method 2
+                   cdf_pool       = D <= q_pool,                # Dunn et al. method 1
+                   rep_sub        = pbar >= ALPHA,              # Dunn et al. method 3
+                   mondrian_chunk = sweep(D, 2, q_mch, "<="),   # author-specific, chunk level
+                   mondrian_book  = sweep(D, 2, q_mbk, "<="))   # author-specific, novel level
+      pred <- top1(D)                                           # nearest author per chunk
+      for (mth in names(sets)) {
+        inset <- sets[[mth]]                                    # prediction sets
+        res3[[length(res3) + 1]] <- data.frame(
+          L = L, method = mth, novel = nstar, author = true_a,
+          covered = as.numeric(inset[, true_a]),                # true author in set
+          set_size = rowSums(inset),                            # authors in set
+          singleton = as.numeric(rowSums(inset) == 1),          # exactly one author
+          empty = as.numeric(rowSums(inset) == 0),              # no author
+          top1 = as.numeric(pred == true_a))                    # nearest author correct
+      }
+    }
+
+    ## ---- (d) chunk-level split: half of each candidate novel's chunks in training ----
+    cand_rows <- which(meta$role == "candidate")                # candidate chunks
+    for (r in seq_len(N_SPLIT)) {
+      te <- unlist(tapply(cand_rows, meta$id[cand_rows], function(v)
+        v[sample.int(length(v), floor(length(v) / 2))]), use.names = FALSE)  # half of each novel to test
+      tr <- !(seq_len(nrow(meta)) %in% te)                      # everything else trains
+      Z <- zfit3(X, tr)                                         # z-scores
+      trc <- tr & meta$role == "candidate"                      # candidate training rows
+      S <- rowsum(Z[trc, , drop = FALSE], meta$author[trc])     # z sums per author
+      P <- S / as.vector(table(meta$author[trc])[rownames(S)])  # profiles incl. same novel
+      D <- cosd(Z[te, , drop = FALSE], P)                       # test distances
+      acc3[[length(acc3) + 1]] <- data.frame(L = L, split = "chunk_level", rep = r,
+        accuracy = mean(top1(D) == meta$author[te]))            # top-1 accuracy
+    }
+  }
+  cl03 <- do.call(rbind, res3)                                  # stack step03 closed-set rows
+  acc3 <- do.call(rbind, acc3)                                  # stack chunk-split accuracy
+
+  ## ---- summaries ----
+  boot03_closed <- boot_ci(cl03, c("covered", "set_size", "singleton", "empty"))  # new methods with CIs
+  by_author03 <- aggregate(covered ~ L + method + author, data = cl03, FUN = mean)  # author coverage
+  book_acc <- boot_ci(cl03[cl03$method == "single_sub", ], "top1")  # book-level top-1 accuracy + CI
+  chunk_acc <- aggregate(accuracy ~ L, data = acc3,
+                         FUN = function(v) c(mean = mean(v), min = min(v), max = max(v)))  # over repeats
+  chunk_acc <- data.frame(L = chunk_acc$L, chunk_acc$accuracy)  # flatten matrix column
+  acc_tab <- data.frame(L = book_acc$L,
+                        acc_book_level = book_acc$estimate,     # held-out novel
+                        acc_book_ci_low = book_acc$ci_low,
+                        acc_book_ci_high = book_acc$ci_high,
+                        acc_chunk_level = chunk_acc$mean[match(book_acc$L, chunk_acc$L)],  # same novel in training
+                        acc_chunk_min = chunk_acc$min[match(book_acc$L, chunk_acc$L)],
+                        acc_chunk_max = chunk_acc$max[match(book_acc$L, chunk_acc$L)])
+  acc_tab$drop <- acc_tab$acc_chunk_level - acc_tab$acc_book_level  # book effect on accuracy
+
+  ## ---- step03 output ----
+  wb3 <- createWorkbook()                                       # new workbook
+  addWorksheet(wb3, "step02_boot_closed"); writeData(wb3, "step02_boot_closed", boot02_closed)  # (a)
+  addWorksheet(wb3, "step02_boot_open");   writeData(wb3, "step02_boot_open", boot02_open)      # (a)
+  addWorksheet(wb3, "step03_boot_closed"); writeData(wb3, "step03_boot_closed", boot03_closed)  # (b)(c)
+  addWorksheet(wb3, "step03_by_author");   writeData(wb3, "step03_by_author", by_author03)      # (c)
+  addWorksheet(wb3, "accuracy_book_effect"); writeData(wb3, "accuracy_book_effect", acc_tab)    # (d)
+  addWorksheet(wb3, "settings")                                 # run settings
+  writeData(wb3, "settings", data.frame(
+    item = c("B_BOOT", "B_REP", "N_SPLIT", "ALPHA", "seed_step03"),
+    value = c(B_BOOT, B_REP, N_SPLIT, ALPHA, 2027)))
+  saveWorkbook(wb3, file.path(out_dir, "step03_results.xlsx"), overwrite = TRUE)  # save
+  print(boot03_closed[boot03_closed$metric == "covered", ])     # coverage in console
+  print(acc_tab)                                                # accuracy in console
+} else cat("STEP 03 skipped: step03_results.xlsx already exists\n")
+
+## =====================================================================
+## STEP 04 - Replication in French and German ELTeC (+ English for comparison)
+##  (a) download/parse French and German ELTeC (cached, done once)
+##  (b) same closed-set, open-set and accuracy analyses for each language
+##  (c) between-book heterogeneity of each author vs author-level coverage
+## =====================================================================
+set.seed(2028)                                                # step04 has its own seed
+LANGS   <- c("eng", "fra", "deu")                             # languages analysed
+B_REP4  <- 100                                                # subsamples for rep_sub
+N_SPLIT4 <- 3                                                 # repeats of chunk-level split
+L_HET   <- 2000                                               # chunk length for heterogeneity
+options(timeout = max(1200, getOption("timeout")))            # allow large downloads
+
+## ---- (a) download and parse one language (skipped if its cache exists) ----
+get_corpus <- function(lang) {
+  csv <- file.path(out_dir, sprintf("step04_eltec_%s_texts.csv", lang))  # cache file
+  if (!file.exists(csv)) {
+    pref <- toupper(lang)                                     # file prefix: FRA / DEU
+    tmp <- file.path(tempdir(), paste0("eltec_", lang))       # temp folder (auto-cleaned by R)
+    dir.create(tmp, showWarnings = FALSE)                     # make temp folder
+    xml_files <- character(0)                                 # TEI file list
+
+    ## ---- Yol A: whole repository as zip ----
+    for (br in c("master", "main")) {                         # try both branch names
+      zurl <- sprintf("https://github.com/COST-ELTeC/ELTeC-%s/archive/refs/heads/%s.zip", lang, br)
+      zf <- file.path(tmp, paste0(lang, ".zip"))              # local zip path
+      r <- try(download.file(zurl, zf, mode = "wb", quiet = TRUE), silent = TRUE)  # download
+      if (!inherits(r, "try-error") && file.exists(zf) && file.size(zf) > 1e6) {
+        unzip(zf, exdir = tmp)                                # extract
+        f_all <- list.files(tmp, pattern = sprintf("^%s.*\\.xml$", pref),
+                            recursive = TRUE, full.names = TRUE)  # all TEI files
+        f_l1 <- f_all[grepl("level1", f_all)]                 # keep level-1 encoding
+        xml_files <- if (length(f_l1) > 0) f_l1 else f_all    # fall back to any level
+        xml_files <- xml_files[!duplicated(basename(xml_files))]  # one file per novel
+        if (length(xml_files) > 0) break                      # done
+      }
+    }
+    ## ---- Yol B: GitHub API listing, one file at a time ----
+    if (length(xml_files) == 0) {
+      lst <- fromJSON(sprintf("https://api.github.com/repos/COST-ELTeC/ELTeC-%s/contents/level1", lang))
+      lst <- lst[grepl("\\.xml$", lst$name), ]                # XML only
+      for (i in seq_len(nrow(lst))) {
+        dest <- file.path(tmp, lst$name[i])                   # local path
+        try(download.file(lst$download_url[i], dest, mode = "wb", quiet = TRUE), silent = TRUE)
+      }
+      xml_files <- list.files(tmp, pattern = sprintf("^%s.*\\.xml$", pref), full.names = TRUE)
+    }
+    cat(lang, "TEI files found:", length(xml_files), "\n")    # report
+
+    parse_l <- function(f) {
+      doc <- read_xml(f); xml_ns_strip(doc)                   # read XML, drop namespaces
+      id <- sub("\\.xml$", "", basename(f))                   # novel id
+      au <- xml_text(xml_find_first(doc, "//teiHeader//titleStmt/author"))  # header author
+      au <- trimws(gsub("\\s+", " ", sub("\\(.*$", "", au)))  # drop dates, tidy spaces
+      if (grepl("_", id)) au <- sub("^[^_]+_", "", id)        # FRA files: author key from file name
+      data.frame(id = id, author = au,
+                 title = trimws(xml_text(xml_find_first(doc, "//teiHeader//titleStmt/title"))),
+                 text = xml_text(xml_find_first(doc, "//text/body")),  # novel body
+                 stringsAsFactors = FALSE)
+    }
+    cl <- do.call(rbind, lapply(xml_files, parse_l))          # parse all novels
+    write.csv(cl, csv, row.names = FALSE, fileEncoding = "UTF-8")  # cache
+  }
+  cl <- tryCatch(read.csv(csv, stringsAsFactors = FALSE, encoding = "UTF-8"),       # Yol A
+                 error = function(e) read.csv(csv, stringsAsFactors = FALSE, fileEncoding = "UTF-8"))  # Yol B
+  for (v in c("author", "title", "text")) cl[[v]] <- fix_utf8(cl[[v]])  # repair encoding
+  cl
+}
+
+## ---- tokenizer for French/German: apostrophes split words (l'homme -> l homme) ----
+tok_l <- function(x) {
+  w <- tryCatch(gsub("[^\\p{L}]+", " ", tolower(x), perl = TRUE),  # Yol A: Unicode letters
+    error = function(e) {
+      y <- iconv(x, from = "UTF-8", to = "ASCII//TRANSLIT", sub = " ")  # Yol B: ASCII
+      gsub("[^a-z]+", " ", tolower(y))
+    })
+  w <- strsplit(w, "\\s+")[[1]]                               # split on spaces
+  w[nchar(w) > 0]                                             # drop empty tokens
+}
+
+## ---- helpers that take the language corpus as input ----
+build_chunks4 <- function(cl, tk, mf, L) {                    # chunk matrix for one language
+  ch_list <- lapply(cl$id, function(id) make_chunks(tk[[id]], L, CAP))  # chunks per novel
+  n_ch <- lengths(ch_list)                                    # chunks per novel
+  meta <- data.frame(id = rep(cl$id, n_ch), author = rep(cl$author, n_ch),
+                     role = rep(cl$role, n_ch), stringsAsFactors = FALSE)  # metadata
+  X <- do.call(rbind, lapply(unlist(ch_list, recursive = FALSE),
+         function(ch) tabulate(match(ch, mf), nbins = length(mf)) / L))  # MFW frequencies
+  list(X = X, meta = meta)
+}
+calib4 <- function(Z, trc, meta) {                            # profiles, naive + cross-fit scores
+  S <- rowsum(Z[trc, , drop = FALSE], meta$id[trc])          # z sums per novel
+  cnt <- as.vector(table(meta$id[trc])[rownames(S)])          # chunks per novel
+  na <- meta$author[trc][match(rownames(S), meta$id[trc])]    # author per novel
+  Sa <- rowsum(S, na)                                         # z sums per author
+  Na <- tapply(cnt, na, sum)[rownames(Sa)]                    # chunks per author
+  P <- Sa / as.vector(Na)                                     # author profiles
+  Zt <- Z[trc, , drop = FALSE]                                # candidate training chunks
+  idt <- meta$id[trc]; aut <- meta$author[trc]                # novel and author per chunk
+  s_naive <- cosd(Zt, P)[cbind(seq_len(nrow(Zt)), match(aut, rownames(P)))]  # own novel inside profile
+  s <- rep(NA_real_, nrow(Zt))                                # cross-fit scores
+  for (m in rownames(S)) {                                    # leave one novel out
+    a <- na[rownames(S) == m]                                 # its author
+    nleft <- Na[a] - cnt[rownames(S) == m]                    # chunks left
+    if (nleft <= 0) next                                      # no other novel
+    pm <- (Sa[a, ] - S[m, ]) / nleft                          # profile without this novel
+    ii <- which(idt == m); zi <- Zt[ii, , drop = FALSE]       # chunks of this novel
+    s[ii] <- 1 - (zi %*% pm) / (sqrt(rowSums(zi^2)) * sqrt(sum(pm^2)))  # cosine distance
+  }
+  ok <- is.finite(s)                                          # usable cross-fit scores
+  list(P = P, s_naive = s_naive, s = s[ok], novel = idt[ok], auth = aut[ok])
+}
+
+## ---- (b) one language: closed set, open set, accuracy; (c) heterogeneity ----
+run_lang <- function(lang, cl, tk) {
+  an <- table(cl$author)                                      # novels per author
+  cl$role <- ifelse(cl$author %in% names(an)[an >= 2], "candidate", "outsider")  # same rule as English
+  mf <- names(sort(table(unlist(tk[cl$role == "candidate"], use.names = FALSE)),
+                   decreasing = TRUE))[1:N_MFW]               # language-specific MFW
+  rc <- list(); ro <- list(); ra <- list(); het <- NULL       # containers
+  for (L in L_set) {
+    cat(lang, "L =", L, "\n")                                 # progress
+    bc <- build_chunks4(cl, tk, mf, L); X <- bc$X; meta <- bc$meta
+
+    ## closed set: leave one candidate novel out
+    for (nstar in cl$id[cl$role == "candidate"]) {
+      te <- which(meta$id == nstar); if (length(te) == 0) next  # test chunks
+      tr <- meta$id != nstar; Z <- zfit3(X, tr)               # z-scores from training rows
+      trc <- tr & meta$role == "candidate"                    # candidate training rows
+      cb <- calib4(Z, trc, meta); ta <- meta$author[te[1]]    # calibration, true author
+      if (!(ta %in% rownames(cb$P))) next                     # author has no other novel
+      D <- cosd(Z[te, , drop = FALSE], cb$P)                  # test distances
+      psum <- 0
+      for (b in seq_len(B_REP4)) psum <- psum + pval_mat(D, cb$s[pick_one(cb$novel)])  # repeated subsampling
+      one <- pick_one(cb$novel)                               # single subsample
+      sets <- list(naive      = D <= qconf(cb$s_naive, ALPHA),
+                   single_sub = D <= qconf(cb$s[one], ALPHA),
+                   cdf_pool   = D <= qpool(cb$s, cb$novel, ALPHA),
+                   rep_sub    = (psum / B_REP4) >= ALPHA)
+      pred <- top1(D)                                         # nearest author
+      for (mth in names(sets)) {
+        ins <- sets[[mth]]
+        rc[[length(rc) + 1]] <- data.frame(lang = lang, L = L, method = mth, novel = nstar, author = ta,
+          covered = as.numeric(ins[, ta]), set_size = rowSums(ins),
+          singleton = as.numeric(rowSums(ins) == 1), empty = as.numeric(rowSums(ins) == 0),
+          top1 = as.numeric(pred == ta))
+      }
+    }
+
+    ## open set: outsider novels
+    for (ostar in cl$id[cl$role == "outsider"]) {
+      te <- which(meta$id == ostar); if (length(te) == 0) next
+      tr <- meta$id != ostar; Z <- zfit3(X, tr)
+      trc <- tr & meta$role == "candidate"
+      cb <- calib4(Z, trc, meta)
+      D <- cosd(Z[te, , drop = FALSE], cb$P)
+      one <- pick_one(cb$novel)
+      sets <- list(naive = D <= qconf(cb$s_naive, ALPHA), single_sub = D <= qconf(cb$s[one], ALPHA))
+      for (mth in names(sets)) {
+        k <- rowSums(sets[[mth]])                             # set size
+        ro[[length(ro) + 1]] <- data.frame(lang = lang, L = L, method = mth, novel = ostar,
+          empty = as.numeric(k == 0), false_single = as.numeric(k == 1), set_size = k)
+      }
+    }
+
+    ## accuracy with chunk-level split (same novel in training)
+    cr <- which(meta$role == "candidate")
+    for (r in seq_len(N_SPLIT4)) {
+      te <- unlist(tapply(cr, meta$id[cr], function(v) v[sample.int(length(v), floor(length(v) / 2))]),
+                   use.names = FALSE)                         # half of each novel to test
+      tr <- !(seq_len(nrow(meta)) %in% te); Z <- zfit3(X, tr)
+      trc <- tr & meta$role == "candidate"
+      S <- rowsum(Z[trc, , drop = FALSE], meta$author[trc])
+      P <- S / as.vector(table(meta$author[trc])[rownames(S)])  # profiles incl. same novel
+      ra[[length(ra) + 1]] <- data.frame(lang = lang, L = L, rep = r,
+        accuracy = mean(top1(cosd(Z[te, , drop = FALSE], P)) == meta$author[te]))
+    }
+
+    ## (c) between-book heterogeneity at one chunk length
+    if (L == L_HET) {
+      cand <- meta$role == "candidate"
+      Za <- zfit3(X, cand)                                    # z-scores from candidate chunks
+      NP <- rowsum(Za[cand, , drop = FALSE], meta$id[cand])   # novel profile sums
+      NP <- NP / as.vector(table(meta$id[cand])[rownames(NP)])  # novel mean profiles
+      Dn <- cosd(NP, NP)                                      # novel x novel distance
+      na <- cl$author[match(rownames(NP), cl$id)]             # author of each novel
+      het <- do.call(rbind, lapply(unique(na), function(a) {
+        w <- which(na == a); o <- which(na != a)              # own and other novels
+        within <- mean(Dn[w, w][upper.tri(Dn[w, w])])         # mean distance among own novels
+        between <- median(Dn[w, o])                           # typical distance to other authors
+        data.frame(lang = lang, author = a, n_novels = length(w),
+                   within = within, between = between, ratio = within / between)
+      }))
+    }
+  }
+  list(closed = do.call(rbind, rc), open = do.call(rbind, ro), acc = do.call(rbind, ra), het = het,
+       info = data.frame(lang = lang, n_novels = nrow(cl), n_candidate_authors = sum(an >= 2),
+                         n_candidate_novels = sum(cl$role == "candidate"),
+                         n_outsider_novels = sum(cl$role == "outsider")))
+}
+
+## ---- step04 runs only if its output does not exist yet (already done -> skipped) ----
+f04 <- file.path(out_dir, "step04_results.xlsx")             # step04 output file
+if (!file.exists(f04)) {
+  ## ---- run all languages ----
+  R4 <- list()
+  for (lang in LANGS) {
+    if (lang == "eng") {
+      R4[[lang]] <- run_lang("eng", corp[, c("id", "author", "title", "text")], toks)  # English already tokenized
+    } else {
+      cl <- get_corpus(lang)                                    # download/parse once, then cache
+      tk <- lapply(cl$text, tok_l); names(tk) <- cl$id          # tokens
+      cl$text <- NULL                                           # free memory
+      R4[[lang]] <- run_lang(lang, cl, tk)                      # analyses
+      rm(cl, tk)
+    }
+  }
+  cl4  <- do.call(rbind, lapply(R4, `[[`, "closed"))            # closed-set rows
+  op4  <- do.call(rbind, lapply(R4, `[[`, "open"))              # open-set rows
+  ac4  <- do.call(rbind, lapply(R4, `[[`, "acc"))               # chunk-split accuracy
+  het4 <- do.call(rbind, lapply(R4, `[[`, "het"))               # heterogeneity per author
+  inf4 <- do.call(rbind, lapply(R4, `[[`, "info"))              # corpus sizes
+
+  ## ---- summaries with novel-level bootstrap CIs, per language ----
+  boot_lang <- function(df, metrics) do.call(rbind, lapply(split(df, df$lang), function(d)
+    cbind(lang = d$lang[1], boot_ci(d, metrics))))              # boot_ci from step03, per language
+  b4_closed <- boot_lang(cl4, c("covered", "set_size", "singleton", "empty"))
+  b4_open   <- boot_lang(op4, c("empty", "false_single", "set_size"))
+  b4_top1   <- boot_lang(cl4[cl4$method == "single_sub", ], "top1")  # book-level accuracy
+  ch4 <- aggregate(accuracy ~ lang + L, data = ac4, FUN = mean)  # chunk-level accuracy
+  acc4 <- merge(b4_top1[, c("lang", "L", "estimate", "ci_low", "ci_high")], ch4, by = c("lang", "L"))
+  names(acc4) <- c("lang", "L", "acc_book_level", "acc_book_ci_low", "acc_book_ci_high", "acc_chunk_level")
+  acc4$drop <- acc4$acc_chunk_level - acc4$acc_book_level       # book effect on accuracy
+
+  ## ---- (c) author coverage vs heterogeneity ----
+  au4 <- aggregate(covered ~ lang + author, data = cl4[cl4$method == "single_sub", ], FUN = mean)  # coverage, all L
+  het4 <- merge(het4, au4, by = c("lang", "author"))            # join
+  hc <- function(d) {                                           # Spearman correlation and test
+    ct <- suppressWarnings(cor.test(d$ratio, d$covered, method = "spearman"))
+    data.frame(n_authors = nrow(d), spearman_rho = unname(ct$estimate), p_value = ct$p.value)
+  }
+  het_cor <- rbind(cbind(lang = "pooled", hc(het4)),
+                   do.call(rbind, lapply(split(het4, het4$lang), function(d) cbind(lang = d$lang[1], hc(d)))))
+
+  ## ---- step04 output ----
+  wb4 <- createWorkbook()
+  addWorksheet(wb4, "corpus_info");      writeData(wb4, "corpus_info", inf4)
+  addWorksheet(wb4, "closed_boot");      writeData(wb4, "closed_boot", b4_closed)
+  addWorksheet(wb4, "open_boot");        writeData(wb4, "open_boot", b4_open)
+  addWorksheet(wb4, "accuracy_book_effect"); writeData(wb4, "accuracy_book_effect", acc4)
+  addWorksheet(wb4, "heterogeneity");    writeData(wb4, "heterogeneity", het4[order(het4$lang, het4$covered), ])
+  addWorksheet(wb4, "heterogeneity_cor"); writeData(wb4, "heterogeneity_cor", het_cor)
+  addWorksheet(wb4, "settings")
+  writeData(wb4, "settings", data.frame(item = c("LANGS", "B_REP4", "N_SPLIT4", "L_HET", "seed_step04"),
+                                        value = c(paste(LANGS, collapse = ","), B_REP4, N_SPLIT4, L_HET, 2028)))
+  saveWorkbook(wb4, file.path(out_dir, "step04_results.xlsx"), overwrite = TRUE)  # save
+  print(inf4); print(het_cor)                                   # console check
+  print(b4_closed[b4_closed$metric == "covered", c("lang", "L", "method", "estimate", "ci_low", "ci_high")])
+} else cat("STEP 04 skipped: step04_results.xlsx already exists\n")
+
+## =====================================================================
+## STEP 06 - Robustness analyses requested by the reviews
+##  (a) MFW chosen inside each fold (test novel excluded) vs global MFW   [item 1]
+##  (b) coverage weighted by chunk, by novel and by author               [item 4]
+##  (c) bootstrap that resamples novels vs one that resamples authors    [item 3]
+##  (d) calibration pool size per fold; coverage for 2-novel vs 3+ authors [item 2]
+##  (e) chunk-split accuracy with 20 repeats                             [item 16]
+##  (f) five random chunk selections (seeds)                             [item 17]
+##  (g) dispersion ratio at every chunk length                           [items 19-20]
+## Reads the cached corpora (no download). Output: step06_results.xlsx
+## =====================================================================
+B_REP6   <- 100                                               # subsamples for rep_sub (as step04)
+N_SPLIT6 <- 20                                                # repeats of the chunk-level split
+SEEDS6   <- c(101, 202, 303, 404, 505)                        # seeds for chunk selection
+N_VOC6   <- 1000                                              # vocabulary from which fold MFW are drawn
+M_ALL6   <- c("naive", "single_sub", "cdf_pool", "rep_sub")   # conformal procedures
+MET6     <- c("covered", "set_size", "singleton", "empty", "top1")  # summed per novel
+
+## ---- corpus of one language from the caches (English from step01, others from step04) ----
+lang_corpus6 <- function(lang) {
+  if (lang == "eng") {
+    cl <- corp[, c("id", "author")]; tk <- toks               # already tokenized above
+  } else {
+    cl <- get_corpus(lang)                                    # reads step04 cache, no download
+    tk <- lapply(cl$text, tok_l); names(tk) <- cl$id          # tokens
+    cl <- cl[, c("id", "author")]                             # drop text to save memory
+  }
+  an <- table(cl$author)                                      # novels per author
+  cl$role   <- ifelse(cl$author %in% names(an)[an >= 2], "candidate", "outsider")  # same rule as step04
+  cl$n_auth <- as.vector(an[cl$author])                       # novels of this author
+  list(cl = cl, tk = tk)
+}
+
+## ---- vocabulary: top N_VOC6 words of the candidate novels + counts per candidate novel ----
+voc6 <- function(cl, tk) {
+  cand <- cl$id[cl$role == "candidate"]                       # candidate novels
+  V <- names(sort(table(unlist(tk[cand], use.names = FALSE)), decreasing = TRUE))[1:N_VOC6]  # V[1:200] = global MFW
+  NV <- t(sapply(cand, function(id) tabulate(match(tk[[id]], V), nbins = N_VOC6)))  # novel x word counts
+  rownames(NV) <- cand
+  list(V = V, NV = NV)
+}
+
+## ---- chunks of one length: relative frequencies of all N_VOC6 words ----
+chunks6 <- function(cl, tk, V, L) {
+  ch_list <- lapply(cl$id, function(id) make_chunks(tk[[id]], L, CAP))  # same chunking as step04
+  n_ch <- lengths(ch_list)                                    # chunks per novel
+  meta <- data.frame(id = rep(cl$id, n_ch), author = rep(cl$author, n_ch),
+                     role = rep(cl$role, n_ch), n_auth = rep(cl$n_auth, n_ch),
+                     stringsAsFactors = FALSE)                # chunk metadata
+  CV <- do.call(rbind, lapply(unlist(ch_list, recursive = FALSE),
+          function(ch) tabulate(match(ch, V), nbins = length(V)))) / L  # chunk x word frequencies
+  list(CV = CV, meta = meta)
+}
+
+## ---- MFW column index for one fold: global list or list without the test novel ----
+mfw_idx6 <- function(NV, nstar, variant) {
+  if (variant == "global") return(seq_len(N_MFW))            # V is sorted, so 1:200 = global MFW
+  order(-(colSums(NV) - NV[nstar, ]))[1:N_MFW]                # top 200 without the test novel
+}
+
+## ---- closed set, leave one novel out; returns one row per novel x variant x method ----
+closed6 <- function(bc, NV, lang, L, variants, methods) {
+  meta <- bc$meta; out <- list()
+  for (nstar in rownames(NV)) {                               # every candidate novel is tested once
+    te <- which(meta$id == nstar); if (length(te) == 0) next  # novel too short for this length
+    tr <- meta$id != nstar                                    # training rows
+    trc <- tr & meta$role == "candidate"                      # candidate training rows
+    ta <- meta$author[te[1]]                                  # true author
+    for (v in variants) {
+      Z <- zfit3(bc$CV[, mfw_idx6(NV, nstar, v), drop = FALSE], tr)  # z-scores from training rows
+      cb <- calib4(Z, trc, meta)                              # profiles, naive and cross-fit scores
+      if (!(ta %in% rownames(cb$P))) next                     # author has no other novel
+      D <- cosd(Z[te, , drop = FALSE], cb$P)                  # test distances
+      sets <- list()
+      if ("naive" %in% methods)      sets$naive      <- D <= qconf(cb$s_naive, ALPHA)
+      if ("single_sub" %in% methods) sets$single_sub <- D <= qconf(cb$s[pick_one(cb$novel)], ALPHA)
+      if ("cdf_pool" %in% methods)   sets$cdf_pool   <- D <= qpool(cb$s, cb$novel, ALPHA)
+      if ("rep_sub" %in% methods) {
+        psum <- 0
+        for (b in seq_len(B_REP6)) psum <- psum + pval_mat(D, cb$s[pick_one(cb$novel)])  # average p-values
+        sets$rep_sub <- (psum / B_REP6) >= ALPHA
+      }
+      hit <- sum(top1(D) == ta)                               # nearest-profile hits
+      n_cal <- length(unique(cb$novel))                       # novels in the calibration pool
+      n_trn <- length(unique(meta$id[trc]))                   # candidate training novels
+      for (m in names(sets)) {
+        k <- rowSums(sets[[m]])                               # set size per chunk
+        out[[length(out) + 1]] <- data.frame(
+          lang = lang, L = L, variant = v, method = m, novel = nstar, author = ta,
+          n_auth = meta$n_auth[te[1]], n_chunks = length(te),
+          covered = sum(sets[[m]][, ta]), set_size = sum(k), singleton = sum(k == 1),
+          empty = sum(k == 0), top1 = hit, n_cal_novels = n_cal, n_train_novels = n_trn,
+          stringsAsFactors = FALSE)
+      }
+    }
+  }
+  do.call(rbind, out)
+}
+
+## ---- chunk-level split accuracy (half of every candidate novel in test), global MFW ----
+acc6 <- function(bc) {
+  meta <- bc$meta; X <- bc$CV[, seq_len(N_MFW)]
+  cr <- which(meta$role == "candidate")
+  sapply(seq_len(N_SPLIT6), function(r) {
+    te <- unlist(tapply(cr, meta$id[cr], function(v) v[sample.int(length(v), floor(length(v) / 2))]),
+                 use.names = FALSE)                           # half of each novel to test
+    tr <- !(seq_len(nrow(meta)) %in% te); Z <- zfit3(X, tr)
+    trc <- tr & meta$role == "candidate"
+    S <- rowsum(Z[trc, , drop = FALSE], meta$author[trc])
+    P <- S / as.vector(table(meta$author[trc])[rownames(S)])  # profiles incl. the same novel
+    mean(top1(cosd(Z[te, , drop = FALSE], P)) == meta$author[te])
+  })
+}
+
+## ---- dispersion ratio per author at one length (same definition as step04) ----
+het6 <- function(bc, cl, lang, L) {
+  meta <- bc$meta; cand <- meta$role == "candidate"
+  Za <- zfit3(bc$CV[, seq_len(N_MFW)], cand)                  # z-scores from candidate chunks
+  NP <- rowsum(Za[cand, , drop = FALSE], meta$id[cand])
+  NP <- NP / as.vector(table(meta$id[cand])[rownames(NP)])    # novel mean profiles
+  Dn <- cosd(NP, NP)                                          # novel x novel distance
+  na <- cl$author[match(rownames(NP), cl$id)]
+  do.call(rbind, lapply(unique(na), function(a) {
+    w <- which(na == a); o <- which(na != a)
+    within <- if (length(w) > 1) mean(Dn[w, w][upper.tri(Dn[w, w])]) else NA
+    between <- median(Dn[w, o])
+    data.frame(lang = lang, L = L, author = a, n_novels = length(w),
+               within = within, between = between, ratio = within / between)
+  }))
+}
+
+## ---- weighted estimates with cluster bootstrap (novels or authors resampled) ----
+## g: novel-level rows of one cell; returns chunk-, novel- and author-weighted means
+boot_w6 <- function(g, metrics, cluster, B = B_BOOT) {
+  S <- as.matrix(g[, metrics, drop = FALSE]); n <- g$n_chunks; au <- g$author
+  stat <- function(i, lab) {                                  # i: rows, lab: author label per row
+    Si <- S[i, , drop = FALSE]; R <- Si / n[i]                # novel-level rates
+    ra <- rowsum(R, lab); ca <- as.vector(rowsum(rep(1, length(lab)), lab))
+    c(colSums(Si) / sum(n[i]), colMeans(R), colMeans(ra / ca))  # chunk, novel, author weight
+  }
+  est <- stat(seq_len(nrow(g)), au)
+  rows_a <- split(seq_len(nrow(g)), au); ua <- names(rows_a)
+  bs <- replicate(B, {
+    if (cluster == "novel") {
+      i <- sample.int(nrow(g), replace = TRUE); stat(i, au[i])        # resample novels
+    } else {
+      a <- ua[sample.int(length(ua), replace = TRUE)]                 # resample authors
+      i <- unlist(rows_a[a], use.names = FALSE)
+      stat(i, rep(seq_along(a), lengths(rows_a[a])))                  # a redrawn author counts twice
+    }
+  })
+  bs <- matrix(bs, nrow = length(est))
+  data.frame(cluster = cluster, weight = rep(c("chunk", "novel", "author"), each = length(metrics)),
+             metric = rep(metrics, 3), estimate = est,
+             ci_low = apply(bs, 1, quantile, 0.025), ci_high = apply(bs, 1, quantile, 0.975),
+             n_novels = nrow(g), n_authors = length(ua), row.names = NULL)
+}
+
+## ---- save a list of tables: Yol A one xlsx, Yol B one csv per table ----
+save6 <- function(tabs, f, prefix = "step06_") {
+  ok <- tryCatch({
+    wb <- createWorkbook()
+    for (nm in names(tabs)) { addWorksheet(wb, nm); writeData(wb, nm, tabs[[nm]]) }
+    saveWorkbook(wb, f, overwrite = TRUE); TRUE
+  }, error = function(e) FALSE)
+  if (!ok) for (nm in names(tabs))                            # Yol B: csv files in the same folder
+    write.csv(tabs[[nm]], file.path(out_dir, paste0(prefix, nm, ".csv")), row.names = FALSE)
+  cat("Saved:", if (ok) f else paste0("csv files (", prefix, "*.csv)"), "\n")
+}
+
+## ---- step06 runs only if its output does not exist yet (already done -> skipped) ----
+f06 <- file.path(out_dir, "step06_results.xlsx")             # step06 output file
+if (!file.exists(f06)) {
+  t06 <- Sys.time()
+  nov6 <- list(); acc_rows <- list(); het_rows <- list(); seed_rows <- list(); ovl_rows <- list()
+  for (lang in LANGS) {
+    set.seed(2029)                                            # step06 seed (per language)
+    lc <- lang_corpus6(lang); cl <- lc$cl; tk <- lc$tk
+    vc <- voc6(cl, tk)
+    ## (a) how many of the 200 words change when the test novel is excluded
+    ovl <- sapply(rownames(vc$NV), function(m) length(intersect(seq_len(N_MFW), mfw_idx6(vc$NV, m, "fold"))))
+    ovl_rows[[lang]] <- data.frame(lang = lang, n_folds = length(ovl), overlap_min = min(ovl),
+                                   overlap_mean = mean(ovl), overlap_max = max(ovl),
+                                   folds_identical = sum(ovl == N_MFW))
+    for (L in L_set) {
+      cat(lang, "L =", L, "|", format(round(difftime(Sys.time(), t06, units = "mins"), 1)), "\n")
+      bc <- chunks6(cl, tk, vc$V, L)
+      ## (a)-(d) both MFW variants, all four procedures
+      nov6[[length(nov6) + 1]] <- closed6(bc, vc$NV, lang, L, c("global", "fold"), M_ALL6)
+      ## (e) chunk-split accuracy, 20 repeats
+      acc_rows[[length(acc_rows) + 1]] <- data.frame(lang = lang, L = L, rep = seq_len(N_SPLIT6),
+                                                     accuracy = acc6(bc))
+      ## (g) dispersion ratio at this length
+      het_rows[[length(het_rows) + 1]] <- het6(bc, cl, lang, L)
+    }
+    ## (f) five random chunk selections (global MFW, procedures without rep_sub)
+    for (sd6 in SEEDS6) {
+      set.seed(sd6)
+      for (L in L_set) {
+        bc <- chunks6(cl, tk, vc$V, L)
+        r <- closed6(bc, vc$NV, lang, L, "global", c("naive", "single_sub", "cdf_pool"))
+        r$seed <- sd6; seed_rows[[length(seed_rows) + 1]] <- r
+      }
+    }
+    rm(lc, cl, tk, vc, bc); invisible(gc())
+  }
+  nov6 <- do.call(rbind, nov6)
+  acc_r <- do.call(rbind, acc_rows); het_r <- do.call(rbind, het_rows)
+  seed_r <- do.call(rbind, seed_rows); ovl_r <- do.call(rbind, ovl_rows)
+  cat("Analyses done, bootstrap starts |", format(round(difftime(Sys.time(), t06, units = "mins"), 1)), "\n")
+
+  ## ---- (a)-(c) weighted estimates, novel and author bootstrap ----
+  set.seed(2030)
+  cells <- split(nov6, list(nov6$lang, nov6$L, nov6$variant, nov6$method), drop = TRUE)
+  wt <- do.call(rbind, lapply(cells, function(g) {
+    rbind(cbind(g[1, c("lang", "L", "variant", "method")], boot_w6(g, MET6, "novel"), row.names = NULL),
+          cbind(g[1, c("lang", "L", "variant", "method")], boot_w6(g, MET6, "author"), row.names = NULL))
+  }))
+  rownames(wt) <- NULL
+
+  ## (a) global vs fold MFW, chunk weight, novel bootstrap (the step04 definition)
+  mc <- wt[wt$cluster == "novel" & wt$weight == "chunk", ]
+  mfw_cmp <- merge(mc[mc$variant == "global", c("lang", "L", "method", "metric", "estimate")],
+                   mc[mc$variant == "fold",   c("lang", "L", "method", "metric", "estimate")],
+                   by = c("lang", "L", "method", "metric"), suffixes = c("_global", "_fold"))
+  mfw_cmp$diff_points <- 100 * (mfw_cmp$estimate_fold - mfw_cmp$estimate_global)  # percentage points
+
+  ## (d) calibration pool per fold, and coverage for 2-novel vs 3+ authors
+  pool <- unique(nov6[nov6$variant == "global", c("lang", "L", "novel", "n_auth", "n_cal_novels", "n_train_novels")])
+  pool$dropped <- pool$n_train_novels - pool$n_cal_novels    # training novels without a cross-fit score
+  calib_pool <- do.call(rbind, lapply(split(pool, list(pool$lang, pool$L), drop = TRUE), function(d)
+    data.frame(lang = d$lang[1], L = d$L[1], n_folds = nrow(d),
+               cal_min = min(d$n_cal_novels), cal_mean = mean(d$n_cal_novels), cal_max = max(d$n_cal_novels),
+               folds_with_drop = sum(d$dropped > 0), max_dropped = max(d$dropped),
+               folds_test_author_2novels = sum(d$n_auth == 2))))
+  g2 <- nov6[nov6$variant == "global", ]
+  g2$ntype <- ifelse(g2$n_auth == 2, "2 novels", "3+ novels")
+  cov_nt <- do.call(rbind, lapply(split(g2, list(g2$lang, g2$L, g2$method, g2$ntype), drop = TRUE), function(g)
+    cbind(g[1, c("lang", "L", "method", "ntype")],
+          boot_w6(g, c("covered", "set_size"), "novel")[c(1, 2, 3, 4), ], row.names = NULL)))  # chunk & novel weight
+
+  ## (e) accuracy: chunk split (20 repeats) vs held-out novels
+  bk <- wt[wt$variant == "global" & wt$method == "single_sub" & wt$metric == "top1" &
+           wt$cluster == "novel" & wt$weight == "chunk", c("lang", "L", "estimate", "ci_low", "ci_high")]
+  names(bk)[3:5] <- c("acc_book_level", "acc_book_ci_low", "acc_book_ci_high")
+  ch <- do.call(rbind, lapply(split(acc_r, list(acc_r$lang, acc_r$L), drop = TRUE), function(d)
+    data.frame(lang = d$lang[1], L = d$L[1], n_split = nrow(d), acc_chunk_mean = mean(d$accuracy),
+               acc_chunk_sd = sd(d$accuracy), acc_chunk_q025 = unname(quantile(d$accuracy, 0.025)),
+               acc_chunk_q975 = unname(quantile(d$accuracy, 0.975)))))
+  acc20 <- merge(bk, ch, by = c("lang", "L"))
+  acc20$drop_points <- 100 * (acc20$acc_chunk_mean - acc20$acc_book_level)
+
+  ## (f) seeds: chunk-weighted estimates per seed, then range
+  sagg <- aggregate(cbind(covered, set_size, singleton, n_chunks) ~ lang + L + method + seed, data = seed_r, FUN = sum)
+  for (v in c("covered", "set_size", "singleton")) sagg[[v]] <- sagg[[v]] / sagg$n_chunks
+  sagg$n_chunks <- NULL
+  srange <- do.call(rbind, lapply(split(sagg, list(sagg$lang, sagg$L, sagg$method), drop = TRUE), function(d)
+    data.frame(lang = d$lang[1], L = d$L[1], method = d$method[1], n_seeds = nrow(d),
+               cov_min = min(d$covered), cov_max = max(d$covered),
+               cov_range_points = 100 * diff(range(d$covered)),
+               size_min = min(d$set_size), size_max = max(d$set_size),
+               single_min = min(d$singleton), single_max = max(d$singleton))))
+
+  ## (g) dispersion at every length vs author coverage (same length, and pooled over lengths)
+  ss <- g2[g2$method == "single_sub", ]
+  covL <- aggregate(cbind(covered, n_chunks) ~ lang + L + author, data = ss, FUN = sum)
+  covL$cov_L <- covL$covered / covL$n_chunks
+  covP <- aggregate(cbind(covered, n_chunks) ~ lang + author, data = ss, FUN = sum)
+  covP$cov_pooled <- covP$covered / covP$n_chunks
+  hetL <- merge(het_r[het_r$author %in% unique(ss$author), ],
+                covL[, c("lang", "L", "author", "cov_L")], by = c("lang", "L", "author"))
+  hetL <- merge(hetL, covP[, c("lang", "author", "cov_pooled")], by = c("lang", "author"))
+  sp <- function(x, y) { ct <- suppressWarnings(cor.test(x, y, method = "spearman")); c(unname(ct$estimate), ct$p.value) }
+  het_cor <- do.call(rbind, lapply(L_set, function(L) {
+    d <- hetL[hetL$L == L, ]
+    do.call(rbind, lapply(c("pooled", LANGS), function(lg) {
+      e <- if (lg == "pooled") d else d[d$lang == lg, ]
+      a <- sp(e$ratio, e$cov_L); b <- sp(e$ratio, e$cov_pooled)
+      data.frame(L = L, lang = lg, n_authors = nrow(e), rho_same_L = a[1], p_same_L = a[2],
+                 rho_pooled_cov = b[1], p_pooled_cov = b[2])
+    }))
+  }))
+  ratio_rank <- do.call(rbind, lapply(split(hetL, hetL$lang), function(d) {   # stability of author ranks across L
+    w <- reshape(d[, c("author", "L", "ratio")], idvar = "author", timevar = "L", direction = "wide")
+    r <- suppressWarnings(cor(w[, -1], method = "spearman", use = "pairwise.complete.obs"))
+    data.frame(lang = d$lang[1], min_rank_cor_between_L = min(r[upper.tri(r)]),
+               mean_rank_cor_between_L = mean(r[upper.tri(r)]))
+  }))
+
+  ## ---- output ----
+  settings6 <- data.frame(item = c("LANGS", "N_MFW", "N_VOC6", "B_REP6", "N_SPLIT6", "SEEDS6", "B_BOOT", "seed_step06",
+                                   "minutes"),
+                          value = c(paste(LANGS, collapse = ","), N_MFW, N_VOC6, B_REP6, N_SPLIT6,
+                                    paste(SEEDS6, collapse = ","), B_BOOT, "2029/2030",
+                                    round(as.numeric(difftime(Sys.time(), t06, units = "mins")), 1)))
+  save6(list(mfw_overlap = ovl_r, mfw_compare = mfw_cmp, weighting = wt, calib_pool = calib_pool,
+             cov_by_ntype = cov_nt, accuracy20 = acc20, seeds_range = srange, seeds_raw = sagg,
+             het_by_L = hetL, het_cor_by_L = het_cor, het_rank_stability = ratio_rank,
+             novel_level = nov6, settings = settings6), f06)
+  print(ovl_r); print(calib_pool)
+  print(mfw_cmp[mfw_cmp$metric == "covered", c("lang", "L", "method", "estimate_global", "estimate_fold", "diff_points")])
+  cat("STEP 06 minutes:", round(as.numeric(difftime(Sys.time(), t06, units = "mins")), 1), "\n")
+} else cat("STEP 06 skipped: step06_results.xlsx already exists\n")
+
+## =====================================================================
+## STEP 07 - Main closed-set results with MFW chosen inside each fold (decision A, item 1)
+##  Reads step06_results.xlsx (no re-analysis of the closed set). The open set stays from step04:
+##  outsider novels never entered the MFW selection, so their MFW list is already fold-free.
+##  Also lists the novels whose result changes with the MFW choice and the words behind it.
+## Output: step07_main_results.xlsx
+## =====================================================================
+f07 <- file.path(out_dir, "step07_main_results.xlsx")         # step07 output file
+if (!file.exists(f07)) {
+  set.seed(2031)                                              # step07 seed (bootstraps)
+  nl  <- read_sheet(f06, "novel_level")                       # novel-level rows, both MFW variants
+  wt6 <- read_sheet(f06, "weighting")                         # weighted estimates with CIs
+  a20 <- read_sheet(f06, "accuracy20")                        # chunk-split accuracy, 20 repeats
+  hL  <- read_sheet(f06, "het_by_L")                          # dispersion ratio at every length
+  fo  <- nl[nl$variant == "fold", ]                           # main analysis from now on
+
+  ## ---- (a) closed set: chunk-weighted, novel bootstrap (same definition as step04) ----
+  sel <- wt6$variant == "fold" & wt6$cluster == "novel" & wt6$weight == "chunk"
+  closed_main <- wt6[sel & wt6$metric %in% c("covered", "set_size", "singleton", "empty"),
+                     c("lang", "L", "method", "metric", "estimate", "ci_low", "ci_high", "n_novels")]
+
+  ## ---- (b) accuracy: held-out novels (fold MFW) vs chunk split (20 repeats) ----
+  bk <- wt6[sel & wt6$metric == "top1" & wt6$method == "single_sub", c("lang", "L", "estimate", "ci_low", "ci_high")]
+  names(bk)[3:5] <- c("acc_book_level", "acc_book_ci_low", "acc_book_ci_high")
+  accuracy_main <- merge(bk, a20[, c("lang", "L", "n_split", "acc_chunk_mean", "acc_chunk_sd",
+                                     "acc_chunk_q025", "acc_chunk_q975")], by = c("lang", "L"))
+  accuracy_main$acc_chunk_level <- accuracy_main$acc_chunk_mean      # name used by the figure code
+  accuracy_main$drop <- accuracy_main$acc_chunk_level - accuracy_main$acc_book_level  # book effect
+
+  ## ---- (c) author coverage (fold MFW, single subsampling) and dispersion ratio ----
+  ss <- fo[fo$method == "single_sub", ]
+  cP <- aggregate(cbind(covered, n_chunks) ~ lang + author, data = ss, FUN = sum)   # pooled over lengths
+  cP$covered <- cP$covered / cP$n_chunks
+  cL <- aggregate(cbind(covered, n_chunks) ~ lang + L + author, data = ss, FUN = sum)  # per length
+  cL$cov_L <- cL$covered / cL$n_chunks
+  het_main <- merge(hL[hL$L == L_HET, c("lang", "author", "n_novels", "within", "between", "ratio")],
+                    cP[, c("lang", "author", "covered")], by = c("lang", "author"))
+  sp7 <- function(x, y) { ct <- suppressWarnings(cor.test(x, y, method = "spearman")); c(unname(ct$estimate), ct$p.value) }
+  het_cor_main <- do.call(rbind, lapply(c("pooled", LANGS), function(lg) {
+    d <- if (lg == "pooled") het_main else het_main[het_main$lang == lg, ]
+    r <- sp7(d$ratio, d$covered)
+    data.frame(lang = lg, n_authors = nrow(d), spearman_rho = r[1], p_value = r[2])
+  }))
+  hLf <- merge(hL[, c("lang", "L", "author", "ratio")], cL[, c("lang", "L", "author", "cov_L")],
+               by = c("lang", "L", "author"))
+  hLf <- merge(hLf, cP[, c("lang", "author", "covered")], by = c("lang", "author"))
+  het_cor_by_L <- do.call(rbind, lapply(L_set, function(L) do.call(rbind, lapply(c("pooled", LANGS), function(lg) {
+    d <- hLf[hLf$L == L & (lg == "pooled" | hLf$lang == lg), ]
+    a <- sp7(d$ratio, d$cov_L); b <- sp7(d$ratio, d$covered)
+    data.frame(L = L, lang = lg, n_authors = nrow(d), rho_same_L = a[1], p_same_L = a[2],
+               rho_pooled_cov = b[1], p_pooled_cov = b[2])
+  }))))
+
+  ## ---- (d) coverage for 2-novel vs 3+ novel authors (fold MFW) ----
+  fo$ntype <- ifelse(fo$n_auth == 2, "2 novels", "3+ novels")
+  cov_by_ntype <- do.call(rbind, lapply(split(fo, list(fo$lang, fo$L, fo$method, fo$ntype), drop = TRUE), function(g)
+    cbind(g[1, c("lang", "L", "method", "ntype")],
+          boot_w6(g, c("covered", "set_size"), "novel")[1:4, ], row.names = NULL)))  # chunk and novel weight
+
+  ## ---- (e) novels whose result changes with the MFW choice, and the words behind it ----
+  cs <- nl[nl$method == "cdf_pool", c("lang", "L", "variant", "novel", "author", "n_chunks", "covered", "top1")]
+  w2 <- merge(cs[cs$variant == "global", -3], cs[cs$variant == "fold", -3],
+              by = c("lang", "L", "novel", "author", "n_chunks"), suffixes = c("_global", "_fold"))
+  w2$d_covered <- w2$covered_fold - w2$covered_global
+  mfw_novel_diff <- w2[abs(w2$d_covered) >= pmax(3, 0.2 * w2$n_chunks), ]  # large changes only
+  mfw_novel_diff <- mfw_novel_diff[order(mfw_novel_diff$lang, -abs(mfw_novel_diff$d_covered)), ]
+  word_rows <- list()
+  for (lg in unique(mfw_novel_diff$lang)) {                   # vocabulary only for languages concerned
+    lc <- lang_corpus6(lg); vc <- voc6(lc$cl, lc$tk)
+    for (m in unique(mfw_novel_diff$novel[mfw_novel_diff$lang == lg])) {
+      gi <- seq_len(N_MFW); fi <- mfw_idx6(vc$NV, m, "fold")
+      for (j in c(setdiff(gi, fi), setdiff(fi, gi)))
+        word_rows[[length(word_rows) + 1]] <- data.frame(lang = lg, novel = m, word = vc$V[j],
+          in_list = if (j %in% gi) "global only" else "fold only",
+          count_all_candidates = sum(vc$NV[, j]), count_this_novel = vc$NV[m, j])
+    }
+    rm(lc, vc); invisible(gc())
+  }
+  mfw_word_diff <- if (length(word_rows)) do.call(rbind, word_rows) else
+    data.frame(lang = character(0), novel = character(0), word = character(0))
+
+  ## ---- (f) global vs fold MFW, compact table for the supplementary material ----
+  mc <- read_sheet(f06, "mfw_compare")
+  mfw_supp <- mc[mc$metric %in% c("covered", "set_size", "top1"), ]
+
+  ## ---- output (Yol A xlsx, Yol B csv) ----
+  save6(list(closed_main = closed_main, accuracy_main = accuracy_main, het_main = het_main,
+             het_cor_main = het_cor_main, het_cor_by_L = het_cor_by_L, cov_by_ntype = cov_by_ntype,
+             mfw_novel_diff = mfw_novel_diff, mfw_word_diff = mfw_word_diff, mfw_supp = mfw_supp,
+             settings = data.frame(item = c("MFW", "source", "seed_step07"),
+                                   value = c("chosen inside each fold (test novel excluded)",
+                                             "step06_results.xlsx", 2031))),
+        f07, prefix = "step07_")
+  print(het_cor_main); print(mfw_novel_diff); print(mfw_word_diff)
+} else cat("STEP 07 skipped: step07_main_results.xlsx already exists\n")
+
+## =====================================================================
+## STEP 08 - Author-specific (Mondrian) thresholds in all three languages (item 18)
+##  Same design as the main analysis: whole novels held out, MFW chosen inside each fold,
+##  cross-fit calibration scores. Two versions:
+##    mondrian_book  : per-author threshold from one random chunk per calibration novel
+##    mondrian_chunk : per-author threshold from all chunks (ignores within-novel dependence)
+## Output: step08_mondrian.xlsx
+## =====================================================================
+f08 <- file.path(out_dir, "step08_mondrian.xlsx")             # step08 output file
+if (!file.exists(f08)) {
+  t08 <- Sys.time(); rows8 <- list()
+  for (lang in LANGS) {
+    set.seed(2032)                                            # step08 seed (per language)
+    lc <- lang_corpus6(lang); vc <- voc6(lc$cl, lc$tk)        # cached corpus, no download
+    for (L in L_set) {
+      cat("STEP 08", lang, "L =", L, "|", format(round(difftime(Sys.time(), t08, units = "mins"), 1)), "\n")
+      bc <- chunks6(lc$cl, lc$tk, vc$V, L); meta <- bc$meta
+      for (nstar in rownames(vc$NV)) {                        # every candidate novel held out once
+        te <- which(meta$id == nstar); if (length(te) == 0) next
+        tr <- meta$id != nstar; trc <- tr & meta$role == "candidate"
+        ta <- meta$author[te[1]]                              # true author
+        Z <- zfit3(bc$CV[, mfw_idx6(vc$NV, nstar, "fold"), drop = FALSE], tr)  # fold MFW, z-scores
+        cb <- calib4(Z, trc, meta)                            # profiles and cross-fit scores
+        if (!(ta %in% rownames(cb$P))) next
+        D <- cosd(Z[te, , drop = FALSE], cb$P)                # test distances
+        one <- pick_one(cb$novel)                             # one chunk per calibration novel
+        q_mch <- tapply(cb$s, cb$auth, qconf, a = ALPHA)[colnames(D)]   # per author, all chunks
+        q_mch[is.na(q_mch)] <- Inf                            # author without scores -> always included
+        q_mbk <- sapply(colnames(D), function(a) qconf(cb$s[one][cb$auth[one] == a], ALPHA))  # per author, one per novel
+        n_cal_a <- sapply(colnames(D), function(a) sum(cb$auth[one] == a))  # calibration novels per author
+        sets <- list(mondrian_chunk = sweep(D, 2, q_mch, "<="),
+                     mondrian_book  = sweep(D, 2, q_mbk, "<="))
+        hit <- sum(top1(D) == ta)
+        for (m in names(sets)) {
+          k <- rowSums(sets[[m]])                             # set size per chunk
+          rows8[[length(rows8) + 1]] <- data.frame(
+            lang = lang, L = L, method = m, novel = nstar, author = ta,
+            n_auth = meta$n_auth[te[1]], n_chunks = length(te),
+            covered = sum(sets[[m]][, ta]), set_size = sum(k), singleton = sum(k == 1),
+            empty = sum(k == 0), full_set = sum(k == ncol(D)), top1 = hit,
+            n_authors = ncol(D), max_cal_novels_per_author = max(n_cal_a),
+            stringsAsFactors = FALSE)
+        }
+      }
+    }
+    rm(lc, vc, bc); invisible(gc())
+  }
+  nl8 <- do.call(rbind, rows8)
+
+  ## ---- overall results: chunk-weighted, novel bootstrap (same definition as step07) ----
+  set.seed(2033)
+  M8 <- c("covered", "set_size", "singleton", "empty", "full_set")
+  cells8 <- split(nl8, list(nl8$lang, nl8$L, nl8$method), drop = TRUE)
+  mond <- do.call(rbind, lapply(cells8, function(g)
+    cbind(g[1, c("lang", "L", "method")], boot_w6(g, M8, "novel")[1:length(M8), ], row.names = NULL)))
+  rownames(mond) <- NULL
+
+  ## ---- author-level coverage pooled over lengths, next to single subsampling (step07) ----
+  ca8 <- aggregate(cbind(covered, n_chunks) ~ lang + author + method, data = nl8, FUN = sum)
+  ca8$cov <- ca8$covered / ca8$n_chunks
+  w8 <- reshape(ca8[, c("lang", "author", "method", "cov")], idvar = c("lang", "author"),
+                timevar = "method", direction = "wide")
+  h7 <- read_sheet(f07, "het_main")                           # single subsampling + dispersion ratio
+  by_author <- merge(h7[, c("lang", "author", "n_novels", "ratio", "covered")], w8, by = c("lang", "author"))
+  names(by_author)[names(by_author) == "covered"] <- "cov.single_sub"
+  by_author <- by_author[order(by_author$lang, by_author$cov.single_sub), ]
+  spread <- do.call(rbind, lapply(c("cov.single_sub", "cov.mondrian_chunk", "cov.mondrian_book"), function(v)
+    data.frame(method = sub("cov.", "", v), min_author_cov = min(by_author[[v]]),
+               max_author_cov = max(by_author[[v]]), sd_author_cov = sd(by_author[[v]]),
+               authors_below_085 = sum(by_author[[v]] < 0.85))))
+
+  save6(list(mondrian_closed = mond, mondrian_by_author = by_author, author_spread = spread,
+             novel_level = nl8,
+             settings = data.frame(item = c("MFW", "seed_step08", "minutes"),
+                                   value = c("chosen inside each fold", "2032/2033",
+                                             round(as.numeric(difftime(Sys.time(), t08, units = "mins")), 1)))),
+        f08, prefix = "step08_")
+  print(spread)
+  print(mond[mond$metric %in% c("covered", "full_set"), c("lang", "L", "method", "metric", "estimate")])
+} else cat("STEP 08 skipped: step08_mondrian.xlsx already exists\n")
+
+## =====================================================================
+## STEP 09 - Manuscript tables and the numbers quoted in the text (no re-analysis)
+##  Reads step04, step06, step07 and step08 results and writes every main-text and
+##  supplementary table in its final layout, plus a sheet with all derived numbers
+##  quoted in the text (so text, tables and code share one source).
+##  Rounding: half away from zero (same rule as the text).
+## Output: manuscript_tables.xlsx
+## =====================================================================
+f09 <- file.path(out_dir, "manuscript_tables.xlsx")           # step09 output file
+f08 <- file.path(out_dir, "step08_mondrian.xlsx")             # step08 output (defined again for clarity)
+if (!file.exists(f09)) {
+  ## ---- helpers ----
+  rh <- function(x, d = 2) sign(x) * floor(abs(x) * 10^d + 0.5 + 1e-9) / 10^d       # round half up
+  fx <- function(x, d = 2) ifelse(is.na(x), "", sprintf(paste0("%.", d, "f"), rh(x, d)))  # fixed decimals
+  fci <- function(e, l, h, d = 2) paste0(fx(e, d), " [", fx(l, d), ", ", fx(h, d), "]")  # estimate [CI]
+  LANGN <- c(eng = "English", fra = "French", deu = "German")
+  MN <- c(naive = "Within-novel calibration", single_sub = "Single subsampling",
+          cdf_pool = "CDF pooling", rep_sub = "Repeated subsampling")
+  ord_lang <- function(x) match(x, c("eng", "fra", "deu"))    # English, French, German order
+  NAMES <- c("Ward, Humphry, Mrs." = "Ward, Mary Augusta (Mrs Humphry Ward)", "Ouida, [pseud.]" = "Ouida",
+             "Eliot, George [pseud.]" = "Eliot, George", Adam = "Adam, Juliette", Fleuriot = "Fleuriot, Z\u00e9na\u00efde",
+             Malot = "Malot, Hector", Greville = "Gr\u00e9ville, Henry", Sand = "Sand, George",
+             Boisgobey = "Boisgobey, Fortun\u00e9 du", Ohnet = "Ohnet, Georges", Maupassant = "Maupassant, Guy de",
+             Feval = "F\u00e9val, Paul", Dombre = "Dombre, Roger", Verne = "Verne, Jules", Aimard = "Aimard, Gustave",
+             Balzac = "Balzac, Honor\u00e9 de", GautierJ = "Gautier, Judith", Gouraud = "Gouraud, Julie",
+             Flaubert = "Flaubert, Gustave")
+  nm <- function(a) ifelse(a %in% names(NAMES), NAMES[a], a)  # full author names for tables
+  sel9 <- function(d, ...) { k <- list(...); for (v in names(k)) d <- d[d[[v]] == k[[v]], , drop = FALSE]; d }
+  num <- list()                                                # numbers quoted in the text
+  addn <- function(item, stat, value) num[[length(num) + 1]] <<- data.frame(item = item, statistic = stat, value = value)
+
+  ## ---- inputs ----
+  cm  <- read_sheet(f07, "closed_main"); am <- read_sheet(f07, "accuracy_main")
+  hm  <- read_sheet(f07, "het_main");    hc <- read_sheet(f07, "het_cor_main")
+  hcl <- read_sheet(f07, "het_cor_by_L"); nt <- read_sheet(f07, "cov_by_ntype")
+  ms  <- read_sheet(f07, "mfw_supp");    mnd <- read_sheet(f07, "mfw_novel_diff"); mwd <- read_sheet(f07, "mfw_word_diff")
+  wt  <- read_sheet(f06, "weighting");   sr <- read_sheet(f06, "seeds_range"); rs <- read_sheet(f06, "het_rank_stability")
+  nl6 <- read_sheet(f06, "novel_level"); cp <- read_sheet(f06, "calib_pool")
+  ob  <- read_sheet(f04, "open_boot")
+  mba <- read_sheet(f08, "mondrian_by_author"); mcl <- read_sheet(f08, "mondrian_closed")
+  wf  <- wt[wt$variant == "fold", ]                            # main analysis: fold-wise MFW
+
+  ## ---- Table 2: 1,000 and 5,000 words ----
+  T2 <- do.call(rbind, lapply(c("eng", "fra", "deu"), function(lg) do.call(rbind, lapply(c(1000, 5000), function(L) {
+    g <- function(m, k) sel9(cm, lang = lg, L = L, method = m, metric = k)
+    data.frame(Collection = paste0(LANGN[lg], " (", length(unique(sel9(hm, lang = lg)$author)), ")"), Words = format(L, big.mark = ","),
+               `Coverage, within-novel` = with(g("naive", "covered"), fci(estimate, ci_low, ci_high)),
+               `Coverage, single subsampling` = with(g("single_sub", "covered"), fci(estimate, ci_low, ci_high)),
+               `Mean set size` = with(g("single_sub", "set_size"), fci(estimate, ci_low, ci_high)),
+               `Single-author share` = with(g("single_sub", "singleton"), fci(estimate, ci_low, ci_high)),
+               check.names = FALSE)
+  }))))
+
+  ## ---- S1: closed set, every length and procedure ----
+  S1 <- do.call(rbind, lapply(c("eng", "fra", "deu"), function(lg) do.call(rbind, lapply(L_set, function(L)
+    do.call(rbind, lapply(names(MN), function(m) {
+      g <- function(k) sel9(cm, lang = lg, L = L, method = m, metric = k)
+      au <- sel9(wf, lang = lg, L = L, method = m, metric = "covered", cluster = "author", weight = "chunk")
+      data.frame(Collection = LANGN[lg], Words = format(L, big.mark = ","), Procedure = MN[m],
+                 `Coverage [novel bootstrap]` = with(g("covered"), fci(estimate, ci_low, ci_high)),
+                 `[author bootstrap]` = paste0("[", fx(au$ci_low), ", ", fx(au$ci_high), "]"),
+                 `Set size` = fx(g("set_size")$estimate), `Single-author` = fx(g("singleton")$estimate),
+                 Empty = fx(g("empty")$estimate), check.names = FALSE)
+    }))))))
+
+  ## ---- S2: chunk-, novel- and author-weighted coverage ----
+  S2 <- do.call(rbind, lapply(c("eng", "fra", "deu"), function(lg) do.call(rbind, lapply(L_set, function(L)
+    do.call(rbind, lapply(names(MN), function(m) {
+      g <- function(w, cl) sel9(wf, lang = lg, L = L, method = m, metric = "covered", weight = w, cluster = cl)
+      data.frame(Collection = LANGN[lg], Words = format(L, big.mark = ","), Procedure = MN[m],
+                 `Chunk weight` = fx(g("chunk", "novel")$estimate),
+                 `Novel weight [CI]` = with(g("novel", "novel"), fci(estimate, ci_low, ci_high)),
+                 `Author weight [CI]` = with(g("author", "author"), fci(estimate, ci_low, ci_high)),
+                 check.names = FALSE)
+    }))))))
+
+  ## ---- S3: MFW from all candidate novels vs MFW chosen without the held-out novel ----
+  mc <- ms[ms$metric == "covered", ]
+  S3 <- do.call(rbind, lapply(c("eng", "fra", "deu"), function(lg) do.call(rbind, lapply(L_set, function(L) {
+    r <- data.frame(Collection = LANGN[lg], Words = format(L, big.mark = ","), check.names = FALSE)
+    for (m in names(MN)) { d <- sel9(mc, lang = lg, L = L, method = m)
+      r[[MN[m]]] <- paste0(fx(d$estimate_global), " / ", fx(d$estimate_fold)) }
+    r
+  }))))
+
+  ## ---- S4: accuracy ----
+  S4 <- do.call(rbind, lapply(c("eng", "fra", "deu"), function(lg) do.call(rbind, lapply(L_set, function(L) {
+    d <- sel9(am, lang = lg, L = L)
+    data.frame(Collection = LANGN[lg], Words = format(L, big.mark = ","),
+               `Held-out novels [95% CI]` = fci(d$acc_book_level, d$acc_book_ci_low, d$acc_book_ci_high),
+               `Chunk split, mean` = fx(d$acc_chunk_mean), SD = fx(d$acc_chunk_sd, 3),
+               range_q = paste0(fx(d$acc_chunk_q025), "\u2013", fx(d$acc_chunk_q975)),
+               `Difference (points)` = fx(100 * d$drop, 1), check.names = FALSE)
+  }))))
+
+  names(S4)[names(S4) == "range_q"] <- "2.5\u201397.5% range"   # name set here, not inside backticks
+
+  ## ---- S5: dispersion (panel A authors, panel B correlations by length) ----
+  hm2 <- hm[order(ord_lang(hm$lang), -hm$ratio), ]
+  S5A <- data.frame(Collection = LANGN[hm2$lang], Author = nm(hm2$author), Novels = hm2$n_novels,
+                    Within = fx(hm2$within), Between = fx(hm2$between), Ratio = fx(hm2$ratio),
+                    Coverage = fx(hm2$covered), check.names = FALSE)
+  pv <- function(p) ifelse(p < 0.001, "< 0.001", fx(p, 3))
+  S5B <- do.call(rbind, lapply(L_set, function(L) {
+    r <- data.frame(Words = format(L, big.mark = ","), check.names = FALSE)
+    for (lg in c("eng", "fra", "deu", "pooled")) { d <- sel9(hcl, L = L, lang = lg)
+      r[[ifelse(lg == "pooled", "All 47 authors", LANGN[lg])]] <- paste0(fx(d$rho_pooled_cov), " (", pv(d$p_pooled_cov), ")") }
+    r
+  }))
+  S5B <- rbind(S5B, data.frame(Words = "Min. rank correlation of ratios between lengths",
+    English = fx(sel9(rs, lang = "eng")$min_rank_cor_between_L), French = fx(sel9(rs, lang = "fra")$min_rank_cor_between_L),
+    German = fx(sel9(rs, lang = "deu")$min_rank_cor_between_L), `All 47 authors` = "", check.names = FALSE))
+
+  ## ---- S6: authors with two vs three or more novels ----
+  ntc <- nt[nt$metric == "covered" & nt$weight == "chunk", ]
+  S6 <- do.call(rbind, lapply(c("fra", "deu", "eng"), function(lg) do.call(rbind, lapply(L_set, function(L)
+    do.call(rbind, lapply(c("2 novels", "3+ novels"), function(ty) {
+      d <- sel9(ntc, lang = lg, L = L, ntype = ty); if (nrow(d) == 0) return(NULL)
+      g <- function(m) with(d[d$method == m, ], fci(estimate, ci_low, ci_high))
+      data.frame(Collection = LANGN[lg], Words = format(L, big.mark = ","), `Novels per author` = ty,
+                 `Novels (authors)` = paste0(d$n_novels[1], " (", d$n_authors[1], ")"),
+                 `Single subsampling` = g("single_sub"), `CDF pooling` = g("cdf_pool"),
+                 `Repeated subsampling` = g("rep_sub"), check.names = FALSE)
+    }))))))
+
+  ## ---- S7: Mondrian by author ----
+  mb <- mba[order(ord_lang(mba$lang), mba$cov.single_sub), ]
+  S7 <- data.frame(Collection = LANGN[mb$lang], Author = nm(mb$author), Novels = mb$n_novels,
+                   `Single subsampling` = fx(mb$cov.single_sub), `Mondrian, one chunk per novel` = fx(mb$cov.mondrian_book),
+                   `Mondrian, all chunks` = fx(mb$cov.mondrian_chunk), check.names = FALSE)
+
+  ## ---- S8: texts by authors outside the candidate set ----
+  S8 <- do.call(rbind, lapply(c("eng", "fra", "deu"), function(lg) do.call(rbind, lapply(L_set, function(L)
+    do.call(rbind, lapply(c("naive", "single_sub"), function(m) {
+      g <- function(k) sel9(ob, lang = lg, L = L, method = m, metric = k)
+      data.frame(Collection = LANGN[lg], Words = format(L, big.mark = ","), Procedure = MN[m],
+                 `Empty set` = with(g("empty"), fci(estimate, ci_low, ci_high)),
+                 `Single wrong author` = with(g("false_single"), fci(estimate, ci_low, ci_high)),
+                 `Set size` = fx(g("set_size")$estimate), check.names = FALSE)
+    }))))))
+
+  ## ---- S9: five random chunk selections ----
+  S9 <- do.call(rbind, lapply(c("eng", "fra", "deu"), function(lg) do.call(rbind, lapply(L_set, function(L)
+    do.call(rbind, lapply(c("naive", "single_sub", "cdf_pool"), function(m) {
+      d <- sel9(sr, lang = lg, L = L, method = m)
+      data.frame(Collection = LANGN[lg], Words = format(L, big.mark = ","), Procedure = MN[m],
+                 Coverage = paste0(fx(d$cov_min), "\u2013", fx(d$cov_max)), `Range (points)` = fx(d$cov_range_points, 1),
+                 `Set size` = paste0(fx(d$size_min), "\u2013", fx(d$size_max)),
+                 `Single-author` = paste0(fx(d$single_min), "\u2013", fx(d$single_max)), check.names = FALSE)
+    }))))))
+
+  ## ---- numbers quoted in the text ----
+  cv <- cm[cm$metric == "covered", ]; bl <- cv[cv$method != "naive", ]; nv <- cv[cv$method == "naive", ]
+  addn("3.1", "book-level coverage min", fx(min(bl$estimate), 3)); addn("3.1", "book-level coverage max", fx(max(bl$estimate), 3))
+  addn("3.1", "book-level point estimates below 0.90", sum(bl$estimate < 0.9))
+  addn("3.1", "book-level CI upper below 0.90 (novel bootstrap)", sum(bl$ci_high < 0.9))
+  for (m in c("single_sub", "cdf_pool", "rep_sub")) { d <- bl[bl$method == m, ]
+    addn("3.1", paste(m, "coverage range"), paste0(fx(min(d$estimate)), "\u2013", fx(max(d$estimate)))) }
+  for (lg in c("eng", "fra", "deu")) { d <- nv[nv$lang == lg, ]
+    addn("3.1", paste("naive coverage range", lg), paste0(fx(min(d$estimate)), "\u2013", fx(max(d$estimate)))) }
+  wa <- wf[wf$metric == "covered" & wf$weight == "chunk", ]
+  addn("3.1", "naive max CI upper, novel bootstrap", fx(max(wa$ci_high[wa$method == "naive" & wa$cluster == "novel"]), 3))
+  addn("3.1", "naive max CI upper, author bootstrap", fx(max(wa$ci_high[wa$method == "naive" & wa$cluster == "author"]), 3))
+  addn("3.1", "book-level CI upper below 0.90 (author bootstrap)", sum(wa$ci_high[wa$method != "naive" & wa$cluster == "author"] < 0.9))
+  wid <- merge(wa[wa$cluster == "author", c("lang", "L", "method", "ci_low", "ci_high")],
+               wa[wa$cluster == "novel", c("lang", "L", "method", "ci_low", "ci_high")], by = c("lang", "L", "method"))
+  wid$r <- (wid$ci_high.x - wid$ci_low.x) / (wid$ci_high.y - wid$ci_low.y)
+  for (lg in c("eng", "fra", "deu")) {
+    addn("3.1", paste("CI width ratio author/novel, book-level mean", lg), fx(mean(wid$r[wid$lang == lg & wid$method != "naive"])))
+    addn("3.1", paste("CI width ratio author/novel, naive mean", lg), fx(mean(wid$r[wid$lang == lg & wid$method == "naive"]))) }
+  ww <- wf[wf$metric == "covered" & wf$method != "naive", ]
+  ch <- ww[ww$weight == "chunk" & ww$cluster == "novel", c("lang", "L", "method", "estimate")]
+  for (w in c("novel", "author")) {
+    d <- merge(ch, ww[ww$weight == w & ww$cluster == "novel", c("lang", "L", "method", "estimate")], by = c("lang", "L", "method"))
+    addn("3.1", paste("max drop vs chunk weight (points),", w, "weight"), fx(100 * max(d$estimate.x - d$estimate.y), 1))
+    addn("3.1", paste("range of", w, "-weighted book-level coverage"), paste0(fx(min(d$estimate.y)), "\u2013", fx(max(d$estimate.y))))
+    addn("3.1", paste(w, "-weighted CI upper below 0.90 (both bootstraps)"), sum(ww$ci_high[ww$weight == w] < 0.9)) }
+  addn("3.1", "naive, French 5,000 words, novel weight", fx(sel9(wf, lang = "fra", L = 5000, method = "naive", metric = "covered", weight = "novel", cluster = "novel")$estimate))
+  mcx <- mc[!(mc$lang == "fra" & mc$L == 5000), ]
+  addn("3.1", "MFW: max |coverage change| outside French 5,000 (points)", fx(max(abs(mcx$diff_points)), 2))
+  fw <- mwd[mwd$word == "fortune", ]
+  addn("3.1", "F\u00e9val: 'fortune' in all French candidate novels / in this novel", paste(fw$count_all_candidates, fw$count_this_novel, sep = " / "))
+  fv <- mnd[mnd$L == 5000, ]
+  addn("3.1", "F\u00e9val 5,000 words: chunks covered (CDF pooling), global / fold / total", paste(fv$covered_global, fv$covered_fold, fv$n_chunks, sep = " / "))
+  for (lg in c("eng", "fra", "deu")) {
+    d <- merge(sel9(cv, lang = lg, method = "single_sub")[, c("L", "estimate")], sel9(cv, lang = lg, method = "naive")[, c("L", "estimate")], by = "L")
+    a <- sel9(am, lang = lg)
+    addn("3.3", paste("coverage gap range (points)", lg), paste0(fx(100 * min(d$estimate.x - d$estimate.y), 0), "\u2013", fx(100 * max(d$estimate.x - d$estimate.y), 0)))
+    addn("3.3", paste("accuracy gap range (points)", lg), paste0(fx(100 * min(a$drop), 0), "\u2013", fx(100 * max(a$drop), 0))) }
+  gp <- merge(sel9(cv, method = "single_sub")[, c("lang", "L", "estimate")], sel9(cv, method = "naive")[, c("lang", "L", "estimate")], by = c("lang", "L"))
+  gp <- merge(gp, am[, c("lang", "L", "drop")], by = c("lang", "L"))
+  addn("3.3", "settings where coverage gap > accuracy gap", paste(sum(gp$estimate.x - gp$estimate.y > gp$drop), "of", nrow(gp)))
+  addn("3.3", "max SD between chunk splits (points)", fx(100 * max(am$acc_chunk_sd), 1))
+  addn("3.3", "min (2.5th percentile of splits - upper CI of held-out accuracy), points", fx(100 * min(am$acc_chunk_q025 - am$acc_book_ci_high), 1))
+  addn("3.4", "authors below 0.85 (single subsampling)", sum(hm$covered < 0.85))
+  for (lg in c("pooled", "eng", "fra", "deu")) addn("3.4", paste("Spearman rho, L = 2,000,", lg), fx(sel9(hc, lang = lg)$spearman_rho))
+  for (lg in c("pooled", "eng", "fra", "deu")) { d <- sel9(hcl, lang = lg)
+    addn("3.4", paste("Spearman rho over lengths,", lg), paste0(fx(min(d$rho_pooled_cov)), " to ", fx(max(d$rho_pooled_cov)))) }
+  for (lg in c("fra", "deu")) { d <- sel9(ntc, lang = lg, method = "single_sub", ntype = "2 novels")
+    addn("3.4", paste("two-novel authors, single subsampling coverage range", lg), paste0(fx(min(d$estimate)), "\u2013", fx(max(d$estimate))))
+    addn("3.4", paste("two-novel authors, CIs including 0.90", lg), paste(sum(d$ci_low <= 0.9 & d$ci_high >= 0.9), "of", nrow(d))) }
+  d3 <- sel9(ntc, method = "single_sub", ntype = "3+ novels")
+  addn("3.4", "three-novel+ authors, single subsampling coverage range", paste0(fx(min(d3$estimate)), "\u2013", fx(max(d3$estimate))))
+  m3 <- mba[mba$n_novels >= 3, ]
+  addn("3.4", "Mondrian: authors with 3+ novels", nrow(m3))
+  addn("3.4", "Mondrian (all chunks): 3+ authors below 0.85 / single subsampling", paste(sum(m3$cov.mondrian_chunk < 0.85), "/", sum(m3$cov.single_sub < 0.85)))
+  addn("3.4", "Mondrian (all chunks): coverage range, 3+ authors", paste0(fx(min(m3$cov.mondrian_chunk)), "\u2013", fx(max(m3$cov.mondrian_chunk))))
+  addn("3.4", "Mondrian (all chunks): two-novel authors with coverage 1", paste(sum(mba$n_novels == 2 & mba$cov.mondrian_chunk == 1), "of", sum(mba$n_novels == 2)))
+  for (lg in c("eng", "fra", "deu")) { d <- sel9(mcl, lang = lg, method = "mondrian_chunk", metric = "covered")
+    addn("3.4", paste("Mondrian (all chunks): overall coverage range", lg), paste0(fx(min(d$estimate)), "\u2013", fx(max(d$estimate))))
+    d <- sel9(mcl, lang = lg, method = "mondrian_book", metric = "set_size")
+    addn("3.4", paste("Mondrian (one chunk per novel): mean set size range", lg), paste0(fx(min(d$estimate), 1), "\u2013", fx(max(d$estimate), 1))) }
+  for (lg in c("eng", "fra", "deu")) { d <- sel9(cp, lang = lg)
+    addn("2.4", paste("calibration pool size per round", lg), paste0(min(d$cal_min), "\u2013", max(d$cal_max))) }
+  ## Discussion: seeds and the Vischer/Ruppius check (item 28)
+  for (m in c("cdf_pool", "single_sub", "naive")) addn("4", paste("seeds: max coverage range (points),", m), fx(max(sr$cov_range_points[sr$method == m]), 1))
+  addn("4", "seeds: book-level coverage over all runs", paste0(fx(min(sr$cov_min[sr$method != "naive"])), "\u2013", fx(max(sr$cov_max[sr$method != "naive"]))))
+  addn("4", "seeds: within-novel coverage over all runs", paste0(fx(min(sr$cov_min[sr$method == "naive"])), "\u2013", fx(max(sr$cov_max[sr$method == "naive"]))))
+  addn("4", "mean coverage, CDF pooling / single subsampling", paste(fx(mean(bl$estimate[bl$method == "cdf_pool"])), fx(mean(bl$estimate[bl$method == "single_sub"])), sep = " / "))
+  de <- nl6[nl6$variant == "fold" & nl6$lang == "deu", ]
+  exc <- grepl("Vischer|Ruppius", de$author)                  # two volumes of one work; novel + sequel
+  cov_by <- function(d) { a <- aggregate(cbind(covered, n_chunks) ~ L + method, data = d, FUN = sum); a$c <- a$covered / a$n_chunks; a }
+  dd <- merge(cov_by(de), cov_by(de[!exc, ]), by = c("L", "method"))
+  addn("4", "German: max |coverage change| without Vischer and Ruppius (points)", fx(100 * max(abs(dd$c.y - dd$c.x)), 2))
+  sp9 <- function(d) unname(suppressWarnings(cor.test(d$ratio, d$covered, method = "spearman"))$estimate)
+  hd <- hm[hm$lang == "deu", ]; hx <- !grepl("Vischer|Ruppius", hm$author)
+  addn("4", "German rho with / without Vischer and Ruppius", paste(fx(sp9(hd)), fx(sp9(hd[!grepl("Vischer|Ruppius", hd$author), ])), sep = " / "))
+  addn("4", "All-author rho with / without Vischer and Ruppius", paste(fx(sp9(hm)), fx(sp9(hm[hx, ])), sep = " / "))
+  numbers <- do.call(rbind, num)
+
+  ## ---- output (Yol A xlsx, Yol B csv) ----
+  save6(list(T2 = T2, S1 = S1, S2 = S2, S3 = S3, S4 = S4, S5A = S5A, S5B = S5B, S6 = S6, S7 = S7,
+             S8 = S8, S9 = S9, text_numbers = numbers), f09, prefix = "manuscript_tables_")
+  for (i in seq_len(nrow(numbers))) cat(sprintf("%-4s %-75s %s\n", numbers$item[i], numbers$statistic[i], numbers$value[i]))
+} else cat("STEP 09 skipped: manuscript_tables.xlsx already exists\n")
+
+## =====================================================================
+## STEP 05 - Figures (placed last: reads step07 main results if present, else step04; no re-analysis)
+##  Fig 1  coverage by text length, method and language      (main text)
+##  Fig 2  set size and single-author rate                    (main text)
+##  Fig 3  accuracy inflation vs coverage inflation           (main text)
+##  Fig 4  between-novel heterogeneity vs author coverage     (main text)
+##  Fig A1 open-set behaviour                                 (appendix)
+## Output: paper_conformal/figures, each as PDF + PNG (1600 dpi) + TIFF (600 dpi, DSH)
+## =====================================================================
+for (p in c("ggplot2")) if (!requireNamespace(p, quietly = TRUE)) install.packages(p)  # install if missing
+library(ggplot2)                                              # plotting
+has_repel <- requireNamespace("ggrepel", quietly = TRUE)      # optional label repelling
+fig_dir <- file.path(out_dir, "figures")                      # figure folder
+if (!dir.exists(fig_dir)) dir.create(fig_dir)                 # create once
+f04 <- file.path(out_dir, "step04_results.xlsx")              # step04 output
+
+f07  <- file.path(out_dir, "step07_main_results.xlsx")         # step07 output (fold-wise MFW)
+use07 <- file.exists(f07)                                     # TRUE after step07 has run
+cat("STEP 05 figures from:", if (use07) "step07 (MFW chosen inside each fold)" else "step04", "\n")
+cb5  <- if (use07) read_sheet(f07, "closed_main") else read_sheet(f04, "closed_boot")        # closed set with CIs
+ob5  <- read_sheet(f04, "open_boot")                          # open set (outsiders never entered MFW selection)
+ac5  <- if (use07) read_sheet(f07, "accuracy_main") else read_sheet(f04, "accuracy_book_effect")  # accuracy
+het5 <- if (use07) read_sheet(f07, "het_main") else read_sheet(f04, "heterogeneity")        # author heterogeneity
+inf5 <- read_sheet(f04, "corpus_info")                        # corpus sizes
+
+## ---- fixed labels, colours and shapes (same in every figure) ----
+lang_lab <- setNames(sprintf(c("English (%d authors)", "French (%d authors)", "German (%d authors)"),
+                             inf5$n_candidate_authors[match(c("eng", "fra", "deu"), inf5$lang)]),
+                     c("eng", "fra", "deu"))                  # facet labels
+meth_lev <- c("naive", "single_sub", "cdf_pool", "rep_sub")   # method order
+meth_lab <- c(naive = "Within-novel calibration (naive)", single_sub = "Single subsampling",
+              cdf_pool = "CDF pooling", rep_sub = "Repeated subsampling")  # legend labels
+meth_col <- c(naive = "#52514E", single_sub = "#2A78D6", cdf_pool = "#EB6834", rep_sub = "#1BAF7A")  # validated hues + neutral reference
+meth_shp <- c(naive = 4, single_sub = 16, cdf_pool = 17, rep_sub = 15)  # second encoding: shape
+meth_lty <- c(naive = "dashed", single_sub = "solid", cdf_pool = "solid", rep_sub = "solid")  # third encoding: line type
+lang_col <- c(eng = "#6250D6", fra = "#008300", deu = "#E34948")  # language hues (validated, used with shapes)
+lang_shp <- c(eng = 16, fra = 17, deu = 15)                   # language shapes
+L_breaks <- c(250, 500, 1000, 2000, 5000)                     # x-axis ticks
+
+prep <- function(d) {                                         # factor coding for plots
+  d$lang <- factor(d$lang, levels = c("eng", "fra", "deu"), labels = lang_lab[c("eng", "fra", "deu")])
+  if ("method" %in% names(d)) d$method <- factor(d$method, levels = meth_lev)
+  d
+}
+th <- theme_bw(base_size = 10) +                              # clean theme, no titles
+  theme(panel.grid.minor = element_blank(),                   # recessive grid
+        panel.grid.major = element_line(colour = "grey90", linewidth = 0.3),
+        strip.background = element_rect(fill = "grey95", colour = "grey70"),
+        legend.position = "bottom", legend.title = element_blank(),
+        legend.key.width = unit(1.4, "lines"))
+x_len <- scale_x_log10(breaks = L_breaks, labels = format(L_breaks, big.mark = ","))  # log text length
+sc_meth <- function(drop = FALSE) list(                      # method scales (drop = TRUE hides absent methods)
+  scale_colour_manual(values = meth_col, labels = meth_lab, drop = drop),
+  scale_shape_manual(values = meth_shp, labels = meth_lab, drop = drop),
+  scale_linetype_manual(values = meth_lty, labels = meth_lab, drop = drop))
+dodge <- position_dodge(width = 0.12)                         # small horizontal offset on log axis
+
+## ---- save one figure: Yol A ggsave, Yol B base graphics devices ----
+save_fig <- function(p, name, w, h) {
+  base <- file.path(fig_dir, name)                            # path without extension
+  okA <- tryCatch({
+    ggsave(paste0(base, ".pdf"), p, width = w, height = h, units = "in",
+           device = if (capabilities("cairo")) cairo_pdf else "pdf")  # vector PDF
+    ggsave(paste0(base, ".png"), p, width = w, height = h, units = "in", dpi = 1600)  # 1600 dpi PNG
+    ggsave(paste0(base, ".tiff"), p, width = w, height = h, units = "in", dpi = 600,
+           compression = "lzw")                               # 600 dpi TIFF for DSH
+    TRUE }, error = function(e) { message("Yol A failed for ", name, ": ", conditionMessage(e)); FALSE })
+  if (!okA) {                                                 # Yol B: open devices directly
+    pdf(paste0(base, ".pdf"), width = w, height = h); print(p); dev.off()
+    png(paste0(base, ".png"), width = w, height = h, units = "in", res = 1600); print(p); dev.off()
+    tiff(paste0(base, ".tiff"), width = w, height = h, units = "in", res = 600, compression = "lzw"); print(p); dev.off()
+  }
+  cat("saved:", name, "\n")                                   # progress
+}
+
+## ---- Fig 1: coverage ----
+d1 <- prep(cb5[cb5$metric == "covered", ])
+f1 <- ggplot(d1, aes(L, estimate, colour = method, shape = method, linetype = method, group = method)) +
+  geom_hline(yintercept = 1 - ALPHA, colour = "grey40", linewidth = 0.4, linetype = "dotted") +  # nominal 0.90
+  geom_line(linewidth = 0.5, position = dodge) +
+  geom_errorbar(aes(ymin = ci_low, ymax = ci_high), width = 0, linewidth = 0.4,
+                linetype = "solid", position = dodge) +       # 95% novel-bootstrap CI
+  geom_point(size = 1.8, position = dodge) +
+  facet_wrap(~ lang, nrow = 1) + x_len + sc_meth() +
+  scale_y_continuous(limits = c(0.35, 1), breaks = seq(0.4, 1, 0.1)) +
+  labs(x = "Text length (words)", y = "Empirical coverage") + th +
+  guides(colour = guide_legend(nrow = 2), shape = guide_legend(nrow = 2), linetype = guide_legend(nrow = 2))
+save_fig(f1, "fig1_coverage", 7, 3.4)
+
+## ---- Fig 2: set size and single-author rate ----
+d2 <- prep(cb5[cb5$metric %in% c("set_size", "singleton"), ])
+d2$metric <- factor(d2$metric, levels = c("set_size", "singleton"),
+                    labels = c("Mean set size (authors)", "Share of single-author sets"))
+f2 <- ggplot(d2, aes(L, estimate, colour = method, shape = method, linetype = method, group = method)) +
+  geom_line(linewidth = 0.5, position = dodge) +
+  geom_errorbar(aes(ymin = ci_low, ymax = ci_high), width = 0, linewidth = 0.4,
+                linetype = "solid", position = dodge) +
+  geom_point(size = 1.8, position = dodge) +
+  facet_grid(metric ~ lang, scales = "free_y", switch = "y") + x_len + sc_meth() +
+  labs(x = "Text length (words)", y = NULL) + th +
+  theme(strip.placement = "outside", strip.background.y = element_blank()) +
+  guides(colour = guide_legend(nrow = 2), shape = guide_legend(nrow = 2), linetype = guide_legend(nrow = 2))
+save_fig(f2, "fig2_efficiency", 7, 4.8)
+
+## ---- Fig 4: heterogeneity vs author-level coverage ----
+het5$short <- sub(",.*$", "", het5$author)                    # surname only
+het5$short <- sub("GautierJ", "Gautier", het5$short)          # tidy French file key
+lab3 <- do.call(rbind, lapply(split(het5, het5$lang), function(d)
+  d[c(which.min(d$covered), which.max(d$ratio), which.min(d$ratio)), ]))  # extremes per language
+lab3 <- lab3[!duplicated(paste(lab3$lang, lab3$author)), ]   # no double labels
+het5$lang_f <- factor(het5$lang, levels = c("eng", "fra", "deu"))
+lab3$lang_f <- factor(lab3$lang, levels = c("eng", "fra", "deu"))
+f3 <- ggplot(het5, aes(ratio, covered, colour = lang_f, shape = lang_f)) +
+  geom_hline(yintercept = 1 - ALPHA, colour = "grey40", linewidth = 0.4, linetype = "dotted") +  # nominal 0.90
+  geom_point(size = 2.2) +
+  scale_y_continuous(limits = c(NA, 1)) +                     # coverage cannot exceed 1
+  scale_colour_manual(values = lang_col, labels = sub(" \\(.*", "", lang_lab)) +
+  scale_shape_manual(values = lang_shp, labels = sub(" \\(.*", "", lang_lab)) +
+  labs(x = "Between-novel stylistic dispersion of the author (within/between distance ratio)",
+       y = "Author-level coverage") + th
+f3 <- if (has_repel) {
+  f3 + ggrepel::geom_text_repel(data = lab3, aes(label = short), size = 2.8, show.legend = FALSE,
+                                min.segment.length = 0, seed = 1)   # Yol A: repelled labels
+} else {
+  f3 + geom_text(data = lab3, aes(label = short), size = 2.8, vjust = -0.9, show.legend = FALSE)  # Yol B
+}
+save_fig(f3, "fig4_heterogeneity", 6, 4.2)   # cited after the inflation figure, so it is Figure 4
+
+## ---- Fig 3: accuracy inflation vs coverage inflation (percentage points) ----
+cv <- cb5[cb5$metric == "covered" & cb5$method %in% c("naive", "single_sub"), c("lang", "L", "method", "estimate")]
+cv <- reshape(cv, idvar = c("lang", "L"), timevar = "method", direction = "wide")  # wide by method
+cv$gap <- 100 * (cv$estimate.single_sub - cv$estimate.naive)  # coverage lost by within-novel calibration
+d4 <- rbind(data.frame(lang = cv$lang, L = cv$L, value = cv$gap,
+                       what = "Coverage: book-level minus within-novel calibration"),
+            data.frame(lang = ac5$lang, L = ac5$L, value = 100 * ac5$drop,
+                       what = "Accuracy: same-novel minus held-out-novel training"))
+d4 <- prep(d4)
+d4$what <- factor(d4$what, levels = unique(d4$what))
+f4 <- ggplot(d4, aes(L, value, shape = what, linetype = what, group = what)) +
+  geom_hline(yintercept = 0, colour = "grey60", linewidth = 0.3) +
+  geom_line(colour = "grey15", linewidth = 0.5) +
+  geom_point(colour = "grey15", fill = "white", size = 2) +
+  scale_shape_manual(values = c(16, 21)) + scale_linetype_manual(values = c("solid", "dashed")) +
+  facet_wrap(~ lang, nrow = 1) + x_len +
+  labs(x = "Text length (words)", y = "Inflation (percentage points)") + th +
+  guides(shape = guide_legend(nrow = 2), linetype = guide_legend(nrow = 2))
+save_fig(f4, "fig3_inflation", 7, 3.3)        # cited first in Section 3.3, so it is Figure 3
+
+## ---- Fig A1: open set (texts by authors outside the candidate set) ----
+dA <- prep(ob5[ob5$metric %in% c("empty", "false_single"), ])
+dA$metric <- factor(dA$metric, levels = c("empty", "false_single"),
+                    labels = c("Empty set (correct rejection)", "Single wrong author"))
+fA <- ggplot(dA, aes(L, estimate, colour = method, shape = method, linetype = method, group = method)) +
+  geom_line(linewidth = 0.5, position = dodge) +
+  geom_errorbar(aes(ymin = ci_low, ymax = ci_high), width = 0, linewidth = 0.4,
+                linetype = "solid", position = dodge) +
+  geom_point(size = 1.8, position = dodge) +
+  facet_grid(metric ~ lang, switch = "y") + x_len + sc_meth(TRUE) +
+  scale_y_continuous(limits = c(0, 1)) +
+  labs(x = "Text length (words)", y = "Share of outsider chunks") + th +
+  theme(strip.placement = "outside")
+save_fig(fA, "figA1_openset", 7, 4.8)
+
+cat("All figures saved in:", fig_dir, "\n")                   # done
