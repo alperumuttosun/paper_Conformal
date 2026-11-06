@@ -1,4 +1,4 @@
-
+## =====================================================================
 ## Conformal prediction sets for authorship attribution (ELTeC English, French, German)
 ## Steps 02 and 03 are the first, English-only analyses. The results reported in the
 ## manuscript come from steps 04 and 06-10; the figures (step 05) are drawn last.
@@ -1677,7 +1677,7 @@ if (!file.exists(f10)) {
 ##  Fig 3  accuracy inflation vs coverage inflation           (main text)
 ##  Fig 4  between-novel heterogeneity vs author coverage     (main text)
 ##  Fig A1 open-set behaviour                                 (supplementary material, Fig. S1)
-## Output: paper_conformal/figures, each as PDF + PNG (1600 dpi) + TIFF (600 dpi, DSH)
+## Output: paper_conformal/figures, each as PDF (vector) + PNG (1600 dpi) + TIFF (1600 dpi)
 ## =====================================================================
 for (p in c("ggplot2")) if (!requireNamespace(p, quietly = TRUE)) install.packages(p)  # install if missing
 library(ggplot2)                                              # plotting
@@ -1734,13 +1734,13 @@ save_fig <- function(p, name, w, h) {
     ggsave(paste0(base, ".pdf"), p, width = w, height = h, units = "in",
            device = if (capabilities("cairo")) cairo_pdf else "pdf")  # vector PDF
     ggsave(paste0(base, ".png"), p, width = w, height = h, units = "in", dpi = 1600)  # 1600 dpi PNG
-    ggsave(paste0(base, ".tiff"), p, width = w, height = h, units = "in", dpi = 600,
-           compression = "lzw")                               # 600 dpi TIFF for DSH
+    ggsave(paste0(base, ".tiff"), p, width = w, height = h, units = "in", dpi = 1600,
+           compression = "lzw")                               # 1600 dpi TIFF
     TRUE }, error = function(e) { message("Yol A failed for ", name, ": ", conditionMessage(e)); FALSE })
   if (!okA) {                                                 # Option B: open devices directly
     pdf(paste0(base, ".pdf"), width = w, height = h); print(p); dev.off()
     png(paste0(base, ".png"), width = w, height = h, units = "in", res = 1600); print(p); dev.off()
-    tiff(paste0(base, ".tiff"), width = w, height = h, units = "in", res = 600, compression = "lzw"); print(p); dev.off()
+    tiff(paste0(base, ".tiff"), width = w, height = h, units = "in", res = 1600, compression = "lzw"); print(p); dev.off()
   }
   cat("saved:", name, "\n")                                   # progress
 }
