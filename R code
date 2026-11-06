@@ -1,6 +1,8 @@
 ## =====================================================================
-## paper_conformal  |  step01-09 (figure step 05 runs last)
+## paper_conformal  |  step01-10 (figure step 05 runs last)
 ## Conformal prediction sets for authorship attribution (ELTeC English, French, German)
+## Steps 02 and 03 are the first, English-only analyses. The results reported in the
+## manuscript come from steps 04 and 06-10; the figures (step 05) are drawn last.
 ## =====================================================================
 
 ## ---------- 0. Setup ----------
@@ -27,7 +29,7 @@ if (!file.exists(corpus_csv)) {
   dir.create(tmp, showWarnings = FALSE)                       # make temp folder
   xml_files <- character(0)                                   # list of TEI files
 
-  ## ---- Yol A: download the whole repository as a zip ----
+  ## ---- Option A: download the whole repository as a zip ----
   okA <- FALSE                                                # flag for success
   for (br in c("master", "main")) {                           # try both branch names
     zurl <- sprintf("https://github.com/COST-ELTeC/ELTeC-eng/archive/refs/heads/%s.zip", br)  # zip url
@@ -43,7 +45,7 @@ if (!file.exists(corpus_csv)) {
     }
   }
 
-  ## ---- Yol B: list files with GitHub API and download one by one ----
+  ## ---- Option B: list files with GitHub API and download one by one ----
   if (!okA) {
     lst <- fromJSON("https://api.github.com/repos/COST-ELTeC/ELTeC-eng/contents/level1")  # file list
     lst <- lst[grepl("\\.xml$", lst$name), ]                  # keep XML files only
@@ -74,15 +76,15 @@ if (!file.exists(corpus_csv)) {
 
 ## ---- read cached corpus (no re-download) ----
 corp <- tryCatch(
-  read.csv(corpus_csv, stringsAsFactors = FALSE, encoding = "UTF-8"),            # Yol A: keep bytes, mark as UTF-8
+  read.csv(corpus_csv, stringsAsFactors = FALSE, encoding = "UTF-8"),            # Option A: keep bytes, mark as UTF-8
   error = function(e)
-    read.csv(corpus_csv, stringsAsFactors = FALSE, fileEncoding = "UTF-8"))      # Yol B: re-encode while reading
+    read.csv(corpus_csv, stringsAsFactors = FALSE, fileEncoding = "UTF-8"))      # Option B: re-encode while reading
 
 ## ---- repair text encoding (fixes "invalid UTF-8" error on Windows) ----
 fix_utf8 <- function(x) {
-  y <- iconv(x, from = "UTF-8", to = "UTF-8", sub = " ")      # Yol A: replace invalid UTF-8 bytes
+  y <- iconv(x, from = "UTF-8", to = "UTF-8", sub = " ")      # Option A: replace invalid UTF-8 bytes
   bad <- is.na(y)                                             # strings still unreadable
-  if (any(bad)) y[bad] <- iconv(x[bad], from = "latin1", to = "UTF-8", sub = " ")  # Yol B: read as latin1
+  if (any(bad)) y[bad] <- iconv(x[bad], from = "latin1", to = "UTF-8", sub = " ")  # Option B: read as latin1
   enc2utf8(y)                                                 # mark everything as UTF-8
 }
 for (v in c("author", "title", "text")) corp[[v]] <- fix_utf8(corp[[v]])  # clean the text columns
@@ -90,9 +92,9 @@ for (v in c("author", "title", "text")) corp[[v]] <- fix_utf8(corp[[v]])  # clea
 ## ---- tokenizer: lower case, letters and apostrophes only ----
 tok <- function(x) {
   w <- tryCatch(
-    gsub("[^\\p{L}']+", " ", tolower(x), perl = TRUE),        # Yol A: Unicode letters
+    gsub("[^\\p{L}']+", " ", tolower(x), perl = TRUE),        # Option A: Unicode letters
     error = function(e) {
-      y <- iconv(x, from = "UTF-8", to = "ASCII//TRANSLIT", sub = " ")  # Yol B: convert to ASCII
+      y <- iconv(x, from = "UTF-8", to = "ASCII//TRANSLIT", sub = " ")  # Option B: convert to ASCII
       gsub("[^a-z']+", " ", tolower(y))                       # keep a-z letters only
     })
   w <- strsplit(w, "\\s+")[[1]]                               # split on spaces
@@ -308,12 +310,12 @@ B_BOOT <- 2000                                                # bootstrap replic
 B_REP  <- 200                                                 # subsamples for rep_sub
 N_SPLIT <- 5                                                  # repeats of the chunk-level split
 
-## ---- read step02 chunk-level results (Yol A: openxlsx, Yol B: readxl) ----
+## ---- read step02 chunk-level results (Option A: openxlsx, Option B: readxl) ----
 read_sheet <- function(f, s) {
-  tryCatch(read.xlsx(f, sheet = s),                           # Yol A
+  tryCatch(read.xlsx(f, sheet = s),                           # Option A
     error = function(e) {
       if (!requireNamespace("readxl", quietly = TRUE)) install.packages("readxl")  # install if missing
-      as.data.frame(readxl::read_excel(f, sheet = s))         # Yol B
+      as.data.frame(readxl::read_excel(f, sheet = s))         # Option B
     })
 }
 ## ---- (a) cluster bootstrap: resample whole novels, not chunks ----
@@ -532,7 +534,7 @@ get_corpus <- function(lang) {
     dir.create(tmp, showWarnings = FALSE)                     # make temp folder
     xml_files <- character(0)                                 # TEI file list
 
-    ## ---- Yol A: whole repository as zip ----
+    ## ---- Option A: whole repository as zip ----
     for (br in c("master", "main")) {                         # try both branch names
       zurl <- sprintf("https://github.com/COST-ELTeC/ELTeC-%s/archive/refs/heads/%s.zip", lang, br)
       zf <- file.path(tmp, paste0(lang, ".zip"))              # local zip path
@@ -547,7 +549,7 @@ get_corpus <- function(lang) {
         if (length(xml_files) > 0) break                      # done
       }
     }
-    ## ---- Yol B: GitHub API listing, one file at a time ----
+    ## ---- Option B: GitHub API listing, one file at a time ----
     if (length(xml_files) == 0) {
       lst <- fromJSON(sprintf("https://api.github.com/repos/COST-ELTeC/ELTeC-%s/contents/level1", lang))
       lst <- lst[grepl("\\.xml$", lst$name), ]                # XML only
@@ -573,17 +575,17 @@ get_corpus <- function(lang) {
     cl <- do.call(rbind, lapply(xml_files, parse_l))          # parse all novels
     write.csv(cl, csv, row.names = FALSE, fileEncoding = "UTF-8")  # cache
   }
-  cl <- tryCatch(read.csv(csv, stringsAsFactors = FALSE, encoding = "UTF-8"),       # Yol A
-                 error = function(e) read.csv(csv, stringsAsFactors = FALSE, fileEncoding = "UTF-8"))  # Yol B
+  cl <- tryCatch(read.csv(csv, stringsAsFactors = FALSE, encoding = "UTF-8"),       # Option A
+                 error = function(e) read.csv(csv, stringsAsFactors = FALSE, fileEncoding = "UTF-8"))  # Option B
   for (v in c("author", "title", "text")) cl[[v]] <- fix_utf8(cl[[v]])  # repair encoding
   cl
 }
 
 ## ---- tokenizer for French/German: apostrophes split words (l'homme -> l homme) ----
 tok_l <- function(x) {
-  w <- tryCatch(gsub("[^\\p{L}]+", " ", tolower(x), perl = TRUE),  # Yol A: Unicode letters
+  w <- tryCatch(gsub("[^\\p{L}]+", " ", tolower(x), perl = TRUE),  # Option A: Unicode letters
     error = function(e) {
-      y <- iconv(x, from = "UTF-8", to = "ASCII//TRANSLIT", sub = " ")  # Yol B: ASCII
+      y <- iconv(x, from = "UTF-8", to = "ASCII//TRANSLIT", sub = " ")  # Option B: ASCII
       gsub("[^a-z]+", " ", tolower(y))
     })
   w <- strsplit(w, "\\s+")[[1]]                               # split on spaces
@@ -771,14 +773,14 @@ if (!file.exists(f04)) {
 } else cat("STEP 04 skipped: step04_results.xlsx already exists\n")
 
 ## =====================================================================
-## STEP 06 - Robustness analyses requested by the reviews
-##  (a) MFW chosen inside each fold (test novel excluded) vs global MFW   [item 1]
-##  (b) coverage weighted by chunk, by novel and by author               [item 4]
-##  (c) bootstrap that resamples novels vs one that resamples authors    [item 3]
-##  (d) calibration pool size per fold; coverage for 2-novel vs 3+ authors [item 2]
-##  (e) chunk-split accuracy with 20 repeats                             [item 16]
-##  (f) five random chunk selections (seeds)                             [item 17]
-##  (g) dispersion ratio at every chunk length                           [items 19-20]
+## STEP 06 - Robustness analyses
+##  (a) MFW chosen inside each fold (test novel excluded) vs global MFW
+##  (b) coverage weighted by chunk, by novel and by author
+##  (c) bootstrap that resamples novels vs one that resamples authors
+##  (d) calibration pool size per fold; coverage for 2-novel vs 3+ authors
+##  (e) chunk-split accuracy with 20 repeats
+##  (f) five random chunk selections (seeds)
+##  (g) dispersion ratio at every chunk length
 ## Reads the cached corpora (no download). Output: step06_results.xlsx
 ## =====================================================================
 B_REP6   <- 100                                               # subsamples for rep_sub (as step04)
@@ -928,14 +930,14 @@ boot_w6 <- function(g, metrics, cluster, B = B_BOOT) {
              n_novels = nrow(g), n_authors = length(ua), row.names = NULL)
 }
 
-## ---- save a list of tables: Yol A one xlsx, Yol B one csv per table ----
+## ---- save a list of tables: Option A one xlsx, Option B one csv per table ----
 save6 <- function(tabs, f, prefix = "step06_") {
   ok <- tryCatch({
     wb <- createWorkbook()
     for (nm in names(tabs)) { addWorksheet(wb, nm); writeData(wb, nm, tabs[[nm]]) }
     saveWorkbook(wb, f, overwrite = TRUE); TRUE
   }, error = function(e) FALSE)
-  if (!ok) for (nm in names(tabs))                            # Yol B: csv files in the same folder
+  if (!ok) for (nm in names(tabs))                            # Option B: csv files in the same folder
     write.csv(tabs[[nm]], file.path(out_dir, paste0(prefix, nm, ".csv")), row.names = FALSE)
   cat("Saved:", if (ok) f else paste0("csv files (", prefix, "*.csv)"), "\n")
 }
@@ -1075,7 +1077,7 @@ if (!file.exists(f06)) {
 } else cat("STEP 06 skipped: step06_results.xlsx already exists\n")
 
 ## =====================================================================
-## STEP 07 - Main closed-set results with MFW chosen inside each fold (decision A, item 1)
+## STEP 07 - Main closed-set results with MFW chosen inside each fold
 ##  Reads step06_results.xlsx (no re-analysis of the closed set). The open set stays from step04:
 ##  outsider novels never entered the MFW selection, so their MFW list is already fold-free.
 ##  Also lists the novels whose result changes with the MFW choice and the words behind it.
@@ -1159,7 +1161,7 @@ if (!file.exists(f07)) {
   mc <- read_sheet(f06, "mfw_compare")
   mfw_supp <- mc[mc$metric %in% c("covered", "set_size", "top1"), ]
 
-  ## ---- output (Yol A xlsx, Yol B csv) ----
+  ## ---- output (Option A xlsx, Option B csv) ----
   save6(list(closed_main = closed_main, accuracy_main = accuracy_main, het_main = het_main,
              het_cor_main = het_cor_main, het_cor_by_L = het_cor_by_L, cov_by_ntype = cov_by_ntype,
              mfw_novel_diff = mfw_novel_diff, mfw_word_diff = mfw_word_diff, mfw_supp = mfw_supp,
@@ -1171,7 +1173,7 @@ if (!file.exists(f07)) {
 } else cat("STEP 07 skipped: step07_main_results.xlsx already exists\n")
 
 ## =====================================================================
-## STEP 08 - Author-specific (Mondrian) thresholds in all three languages (item 18)
+## STEP 08 - Author-specific (Mondrian) thresholds in all three languages
 ##  Same design as the main analysis: whole novels held out, MFW chosen inside each fold,
 ##  cross-fit calibration scores. Two versions:
 ##    mondrian_book  : per-author threshold from one random chunk per calibration novel
@@ -1257,6 +1259,9 @@ if (!file.exists(f08)) {
 ##  supplementary table in its final layout, plus a sheet with all derived numbers
 ##  quoted in the text (so text, tables and code share one source).
 ##  Rounding: half away from zero (same rule as the text).
+##  Sheet names S1-S9 follow an earlier numbering: in the manuscript, sheets S4-S9 are
+##  Supplementary Tables S5-S10, and Supplementary Table S4 (comparability of calibration
+##  and test scores) comes from step10_results.xlsx.
 ## Output: manuscript_tables.xlsx
 ## =====================================================================
 f09 <- file.path(out_dir, "manuscript_tables.xlsx")           # step09 output file
@@ -1336,7 +1341,7 @@ if (!file.exists(f09)) {
     r
   }))))
 
-  ## ---- S4: accuracy ----
+  ## ---- S4: accuracy (Supplementary Table S5 in the manuscript) ----
   S4 <- do.call(rbind, lapply(c("eng", "fra", "deu"), function(lg) do.call(rbind, lapply(L_set, function(L) {
     d <- sel9(am, lang = lg, L = L)
     data.frame(Collection = LANGN[lg], Words = format(L, big.mark = ","),
@@ -1348,7 +1353,7 @@ if (!file.exists(f09)) {
 
   names(S4)[names(S4) == "range_q"] <- "2.5\u201397.5% range"   # name set here, not inside backticks
 
-  ## ---- S5: dispersion (panel A authors, panel B correlations by length) ----
+  ## ---- S5 (Supplementary Table S6): dispersion (panel A authors, panel B correlations by length) ----
   hm2 <- hm[order(ord_lang(hm$lang), -hm$ratio), ]
   S5A <- data.frame(Collection = LANGN[hm2$lang], Author = nm(hm2$author), Novels = hm2$n_novels,
                     Within = fx(hm2$within), Between = fx(hm2$between), Ratio = fx(hm2$ratio),
@@ -1364,7 +1369,7 @@ if (!file.exists(f09)) {
     English = fx(sel9(rs, lang = "eng")$min_rank_cor_between_L), French = fx(sel9(rs, lang = "fra")$min_rank_cor_between_L),
     German = fx(sel9(rs, lang = "deu")$min_rank_cor_between_L), `All 47 authors` = "", check.names = FALSE))
 
-  ## ---- S6: authors with two vs three or more novels ----
+  ## ---- S6 (Supplementary Table S7): authors with two vs three or more novels ----
   ntc <- nt[nt$metric == "covered" & nt$weight == "chunk", ]
   S6 <- do.call(rbind, lapply(c("fra", "deu", "eng"), function(lg) do.call(rbind, lapply(L_set, function(L)
     do.call(rbind, lapply(c("2 novels", "3+ novels"), function(ty) {
@@ -1376,13 +1381,13 @@ if (!file.exists(f09)) {
                  `Repeated subsampling` = g("rep_sub"), check.names = FALSE)
     }))))))
 
-  ## ---- S7: Mondrian by author ----
+  ## ---- S7 (Supplementary Table S8): Mondrian by author ----
   mb <- mba[order(ord_lang(mba$lang), mba$cov.single_sub), ]
   S7 <- data.frame(Collection = LANGN[mb$lang], Author = nm(mb$author), Novels = mb$n_novels,
                    `Single subsampling` = fx(mb$cov.single_sub), `Mondrian, one chunk per novel` = fx(mb$cov.mondrian_book),
                    `Mondrian, all chunks` = fx(mb$cov.mondrian_chunk), check.names = FALSE)
 
-  ## ---- S8: texts by authors outside the candidate set ----
+  ## ---- S8 (Supplementary Table S9): texts by authors outside the candidate set ----
   S8 <- do.call(rbind, lapply(c("eng", "fra", "deu"), function(lg) do.call(rbind, lapply(L_set, function(L)
     do.call(rbind, lapply(c("naive", "single_sub"), function(m) {
       g <- function(k) sel9(ob, lang = lg, L = L, method = m, metric = k)
@@ -1392,7 +1397,7 @@ if (!file.exists(f09)) {
                  `Set size` = fx(g("set_size")$estimate), check.names = FALSE)
     }))))))
 
-  ## ---- S9: five random chunk selections ----
+  ## ---- S9 (Supplementary Table S10): five random chunk selections ----
   S9 <- do.call(rbind, lapply(c("eng", "fra", "deu"), function(lg) do.call(rbind, lapply(L_set, function(L)
     do.call(rbind, lapply(c("naive", "single_sub", "cdf_pool"), function(m) {
       d <- sel9(sr, lang = lg, L = L, method = m)
@@ -1465,7 +1470,7 @@ if (!file.exists(f09)) {
     addn("3.4", paste("Mondrian (one chunk per novel): mean set size range", lg), paste0(fx(min(d$estimate), 1), "\u2013", fx(max(d$estimate), 1))) }
   for (lg in c("eng", "fra", "deu")) { d <- sel9(cp, lang = lg)
     addn("2.4", paste("calibration pool size per round", lg), paste0(min(d$cal_min), "\u2013", max(d$cal_max))) }
-  ## Discussion: seeds and the Vischer/Ruppius check (item 28)
+  ## Discussion: seeds and the Vischer/Ruppius check
   for (m in c("cdf_pool", "single_sub", "naive")) addn("4", paste("seeds: max coverage range (points),", m), fx(max(sr$cov_range_points[sr$method == m]), 1))
   addn("4", "seeds: book-level coverage over all runs", paste0(fx(min(sr$cov_min[sr$method != "naive"])), "\u2013", fx(max(sr$cov_max[sr$method != "naive"]))))
   addn("4", "seeds: within-novel coverage over all runs", paste0(fx(min(sr$cov_min[sr$method == "naive"])), "\u2013", fx(max(sr$cov_max[sr$method == "naive"]))))
@@ -1481,11 +1486,190 @@ if (!file.exists(f09)) {
   addn("4", "All-author rho with / without Vischer and Ruppius", paste(fx(sp9(hm)), fx(sp9(hm[hx, ])), sep = " / "))
   numbers <- do.call(rbind, num)
 
-  ## ---- output (Yol A xlsx, Yol B csv) ----
+  ## ---- output (Option A xlsx, Option B csv) ----
   save6(list(T2 = T2, S1 = S1, S2 = S2, S3 = S3, S4 = S4, S5A = S5A, S5B = S5B, S6 = S6, S7 = S7,
              S8 = S8, S9 = S9, text_numbers = numbers), f09, prefix = "manuscript_tables_")
   for (i in seq_len(nrow(numbers))) cat(sprintf("%-4s %-75s %s\n", numbers$item[i], numbers$statistic[i], numbers$value[i]))
 } else cat("STEP 09 skipped: manuscript_tables.xlsx already exists\n")
+
+## =====================================================================
+## STEP 10 - Are calibration and test scores comparable? (+ three small checks)
+##  (a) calibration pool without the test author's other novels  -> equal profile size
+##  (b) nested scores: for every calibration novel, MFW and z-scaling re-estimated without it
+##      -> each calibration score is produced exactly like the test score
+##  (c) a and b together
+##  (d) whole-novel holdout with half of every training novel's chunks (training size check)
+##  (e) repeated subsampling with 500 instead of 100 subsamples
+##  (f) dispersion checks: within-language ranks, authors with 3+ novels, alternative ratio
+##  (g) novels other than Feval affected by the MFW choice; R version and packages
+## Same design as step06/07 (fold-wise MFW). Output: step10_results.xlsx
+## =====================================================================
+f10 <- file.path(out_dir, "step10_results.xlsx")             # step10 output file
+if (!file.exists(f10)) {
+  t10 <- Sys.time(); rows10 <- list(); het10 <- list()
+  for (lang in LANGS) {
+    set.seed(2034)                                            # step10 seed (per language)
+    lc <- lang_corpus6(lang); vc <- voc6(lc$cl, lc$tk)        # cached corpus, no download
+    for (L in L_set) {
+      cat("STEP 10", lang, "L =", L, "|", format(round(difftime(Sys.time(), t10, units = "mins"), 1)), "\n")
+      bc <- chunks6(lc$cl, lc$tk, vc$V, L); meta <- bc$meta
+      for (nstar in rownames(vc$NV)) {                        # every candidate novel held out once
+        te <- which(meta$id == nstar); if (length(te) == 0) next
+        tr <- meta$id != nstar; trc <- tr & meta$role == "candidate"
+        ta <- meta$author[te[1]]                              # true author
+        Z <- zfit3(bc$CV[, mfw_idx6(vc$NV, nstar, "fold"), drop = FALSE], tr)  # main design
+        cb <- calib4(Z, trc, meta)
+        if (!(ta %in% rownames(cb$P))) next
+        D <- cosd(Z[te, , drop = FALSE], cb$P)                # test distances (main design)
+        ## (b) nested calibration scores: MFW list and z-scaling also without the calibration novel
+        s_nest <- rep(NA_real_, length(cb$s))
+        for (m in unique(cb$novel)) {
+          w <- which(cb$novel == m); am <- cb$auth[w[1]]
+          keep <- !(rownames(vc$NV) %in% c(nstar, m))
+          idm <- order(-colSums(vc$NV[keep, , drop = FALSE]))[1:N_MFW]       # MFW without nstar and m
+          trm <- tr & meta$id != m
+          Zm <- zfit3(bc$CV[, idm, drop = FALSE], trm)                       # z-scaling without m
+          oth <- trc & meta$author == am & meta$id != m                       # author's other novels
+          pm <- matrix(colMeans(Zm[oth, , drop = FALSE]), nrow = 1)         # profile without m
+          s_nest[w] <- cosd(Zm[meta$id == m, , drop = FALSE], pm)[, 1]      # same row order as cb$s
+        }
+        ## calibration pools for the four designs
+        same <- cb$auth == ta                                 # novels of the test author
+        pools <- list(main = list(s = cb$s, g = cb$novel),
+                      excl_author = list(s = cb$s[!same], g = cb$novel[!same]),
+                      nested = list(s = s_nest, g = cb$novel),
+                      nested_excl_author = list(s = s_nest[!same], g = cb$novel[!same]))
+        sets <- list()
+        for (v in names(pools)) {
+          p <- pools[[v]]
+          sets[[paste(v, "single_sub", sep = "|")]] <- D <= qconf(p$s[pick_one(p$g)], ALPHA)
+          sets[[paste(v, "cdf_pool", sep = "|")]]   <- D <= qpool(p$s, p$g, ALPHA)
+        }
+        ## (e) repeated subsampling with 100 and 500 subsamples (main design)
+        ps <- 0
+        for (b in seq_len(500)) {
+          ps <- ps + pval_mat(D, cb$s[pick_one(cb$novel)])
+          if (b == 100) sets[["main|rep_sub_100"]] <- (ps / 100) >= ALPHA
+        }
+        sets[["main|rep_sub_500"]] <- (ps / 500) >= ALPHA
+        ## (d) whole-novel holdout with half of every training novel's chunks
+        rc <- which(trc)
+        half <- unlist(tapply(rc, meta$id[rc], function(v) v[sample.int(length(v), max(1, floor(length(v) / 2)))]),
+                       use.names = FALSE)
+        Ph <- rowsum(Z[half, , drop = FALSE], meta$author[half])
+        Ph <- Ph / as.vector(table(meta$author[half])[rownames(Ph)])
+        hit_full <- sum(top1(D) == ta)
+        hit_half <- sum(top1(cosd(Z[te, , drop = FALSE], Ph)) == ta)
+        for (k in names(sets)) {
+          kk <- strsplit(k, "|", fixed = TRUE)[[1]]; ns <- rowSums(sets[[k]])
+          rows10[[length(rows10) + 1]] <- data.frame(
+            lang = lang, L = L, design = kk[1], method = kk[2], novel = nstar, author = ta,
+            n_auth = meta$n_auth[te[1]], n_chunks = length(te),
+            covered = sum(sets[[k]][, ta]), set_size = sum(ns), singleton = sum(ns == 1),
+            empty = sum(ns == 0), top1 = hit_full, top1_half = hit_half, stringsAsFactors = FALSE)
+        }
+      }
+      ## (f) alternative dispersion ratio at the heterogeneity length
+      if (L == L_HET) {
+        cand <- meta$role == "candidate"
+        Za <- zfit3(bc$CV[, seq_len(N_MFW)], cand)
+        NP <- rowsum(Za[cand, , drop = FALSE], meta$id[cand]); NP <- NP / as.vector(table(meta$id[cand])[rownames(NP)])
+        Dn <- cosd(NP, NP); na <- lc$cl$author[match(rownames(NP), lc$cl$id)]
+        for (a in unique(na)) {
+          wi <- which(na == a)
+          within <- mean(Dn[wi, wi][upper.tri(Dn[wi, wi])])
+          nearest <- min(sapply(setdiff(unique(na), a), function(b) mean(Dn[wi, na == b])))  # closest other author
+          het10[[length(het10) + 1]] <- data.frame(lang = lang, author = a, n_novels = length(wi),
+                                                   within = within, nearest_other = nearest,
+                                                   ratio_alt = within / nearest)
+        }
+      }
+    }
+    rm(lc, vc, bc); invisible(gc())
+  }
+  nl10 <- do.call(rbind, rows10); h10 <- do.call(rbind, het10)
+  tryCatch(write.csv(nl10, file.path(out_dir, "step10_novel_level_backup.csv"), row.names = FALSE),
+           error = function(e) NULL)                          # safety copy of the long analysis
+  cat("Analyses done, summaries start |", format(round(difftime(Sys.time(), t10, units = "mins"), 1)), "\n")
+
+  ## ---- (a)-(c), (e): coverage, set size, single-author share (chunk weight, novel bootstrap) ----
+  set.seed(2035)
+  cells10 <- split(nl10, list(nl10$lang, nl10$L, nl10$design, nl10$method), drop = TRUE)
+  comp <- do.call(rbind, lapply(cells10, function(g)
+    cbind(g[1, c("lang", "L", "design", "method")],
+          boot_w6(g, c("covered", "set_size", "singleton", "empty"), "novel")[1:4, ], row.names = NULL)))
+  rownames(comp) <- NULL
+  cw <- comp[comp$metric == "covered" & comp$method %in% c("single_sub", "cdf_pool"), ]
+  comp_diff <- merge(cw[cw$design != "main", c("lang", "L", "design", "method", "estimate", "ci_low", "ci_high")],
+                     cw[cw$design == "main", c("lang", "L", "method", "estimate")],
+                     by = c("lang", "L", "method"), suffixes = c("", "_main"))
+  comp_diff$diff_points <- 100 * (comp_diff$estimate - comp_diff$estimate_main)
+  comp_summary <- do.call(rbind, lapply(split(comp_diff, list(comp_diff$design, comp_diff$method), drop = TRUE), function(d)
+    data.frame(design = d$design[1], method = d$method[1], cov_min = min(d$estimate), cov_max = max(d$estimate),
+               diff_min_points = min(d$diff_points), diff_max_points = max(d$diff_points),
+               ci_upper_below_090 = sum(d$ci_high < 0.9))))
+  rp <- comp[comp$design == "main" & comp$method %in% c("rep_sub_100", "rep_sub_500"), ]
+  rep_mc <- merge(rp[rp$method == "rep_sub_100", c("lang", "L", "metric", "estimate")],
+                  rp[rp$method == "rep_sub_500", c("lang", "L", "metric", "estimate")],
+                  by = c("lang", "L", "metric"), suffixes = c("_B100", "_B500"))
+  rep_mc$diff_points <- 100 * (rep_mc$estimate_B500 - rep_mc$estimate_B100)
+
+  ## ---- (d): accuracy, whole-novel holdout with full vs halved training ----
+  one <- nl10[nl10$design == "main" & nl10$method == "single_sub", ]
+  ac <- aggregate(cbind(top1, top1_half, n_chunks) ~ lang + L, data = one, FUN = sum)
+  ac$acc_full <- ac$top1 / ac$n_chunks; ac$acc_half <- ac$top1_half / ac$n_chunks
+  am7 <- read_sheet(f07, "accuracy_main")[, c("lang", "L", "acc_chunk_mean")]
+  acc_size <- merge(ac[, c("lang", "L", "acc_full", "acc_half")], am7, by = c("lang", "L"))
+  acc_size$book_effect_full_points <- 100 * (acc_size$acc_chunk_mean - acc_size$acc_full)
+  acc_size$book_effect_half_points <- 100 * (acc_size$acc_chunk_mean - acc_size$acc_half)
+
+  ## ---- (f): dispersion checks against author coverage (step07, single subsampling) ----
+  hm7 <- read_sheet(f07, "het_main")
+  hh <- merge(hm7[, c("lang", "author", "n_novels", "ratio", "covered")], h10[, c("lang", "author", "ratio_alt")],
+              by = c("lang", "author"))
+  rk <- function(x) (rank(x) - 0.5) / length(x)               # ranks scaled within a language
+  hh$ratio_r <- ave(hh$ratio, hh$lang, FUN = rk); hh$cov_r <- ave(hh$covered, hh$lang, FUN = rk)
+  sp10 <- function(x, y) tryCatch({ ct <- suppressWarnings(cor.test(x, y, method = "spearman"))
+    c(unname(ct$estimate), ct$p.value, length(x)) }, error = function(e) c(NA, NA, length(x)))  # NA if too few authors
+  het_checks <- rbind(
+    data.frame(check = "pooled, original ratio", t(sp10(hh$ratio, hh$covered))),
+    data.frame(check = "pooled, ranks within language", t(sp10(hh$ratio_r, hh$cov_r))),
+    data.frame(check = "pooled, authors with 3+ novels", t(sp10(hh$ratio[hh$n_novels >= 3], hh$covered[hh$n_novels >= 3]))),
+    data.frame(check = "pooled, alternative ratio (nearest other author)", t(sp10(hh$ratio_alt, hh$covered))),
+    do.call(rbind, lapply(LANGS, function(lg) { d <- hh[hh$lang == lg, ]
+      rbind(data.frame(check = paste(lg, "original ratio"), t(sp10(d$ratio, d$covered))),
+            data.frame(check = paste(lg, "alternative ratio"), t(sp10(d$ratio_alt, d$covered))),
+            if (sum(d$n_novels >= 3) >= 5) data.frame(check = paste(lg, "authors with 3+ novels"),
+                                                      t(sp10(d$ratio[d$n_novels >= 3], d$covered[d$n_novels >= 3])))) })))
+  names(het_checks)[2:4] <- c("spearman_rho", "p_value", "n_authors")
+
+  ## ---- (g): other novels affected by the MFW choice (step06), and the R session ----
+  n6 <- read_sheet(f06, "novel_level"); n6 <- n6[n6$method == "cdf_pool", ]
+  w6 <- merge(n6[n6$variant == "global", c("lang", "L", "novel", "n_chunks", "covered")],
+              n6[n6$variant == "fold", c("lang", "L", "novel", "covered")], by = c("lang", "L", "novel"),
+              suffixes = c("_global", "_fold"))
+  w6$abs_change <- abs(w6$covered_fold - w6$covered_global)
+  o6 <- w6[!grepl("Feval", w6$novel), ]
+  mfw_others <- data.frame(statistic = c("novels x lengths compared (excluding Feval)",
+                                         "with any change in covered chunks",
+                                         "largest change in covered chunks",
+                                         "largest change as share of the novel's chunks"),
+                           value = c(nrow(o6), sum(o6$abs_change > 0), max(o6$abs_change),
+                                     round(max(o6$abs_change / o6$n_chunks), 3)))
+  pk <- c("openxlsx", "readxl", "xml2", "jsonlite", "ggplot2", "ggrepel")
+  session <- data.frame(item = c("R", "platform", pk),
+                        value = c(R.version.string, R.version$platform,
+                                  sapply(pk, function(p) tryCatch(as.character(packageVersion(p)), error = function(e) "not installed"))))
+
+  save6(list(comparability = comp, comparability_diff = comp_diff, comparability_summary = comp_summary,
+             rep_sub_B100_vs_B500 = rep_mc, accuracy_training_size = acc_size, het_checks = het_checks,
+             het_alt_ratio = hh, mfw_other_novels = mfw_others, session = session, novel_level = nl10,
+             settings = data.frame(item = c("seed_step10", "minutes"),
+                                   value = c("2034/2035", round(as.numeric(difftime(Sys.time(), t10, units = "mins")), 1)))),
+        f10, prefix = "step10_")
+  print(comp_summary); print(het_checks); print(mfw_others)
+  cat("STEP 10 minutes:", round(as.numeric(difftime(Sys.time(), t10, units = "mins")), 1), "\n")
+} else cat("STEP 10 skipped: step10_results.xlsx already exists\n")
 
 ## =====================================================================
 ## STEP 05 - Figures (placed last: reads step07 main results if present, else step04; no re-analysis)
@@ -1493,7 +1677,7 @@ if (!file.exists(f09)) {
 ##  Fig 2  set size and single-author rate                    (main text)
 ##  Fig 3  accuracy inflation vs coverage inflation           (main text)
 ##  Fig 4  between-novel heterogeneity vs author coverage     (main text)
-##  Fig A1 open-set behaviour                                 (appendix)
+##  Fig A1 open-set behaviour                                 (supplementary material, Fig. S1)
 ## Output: paper_conformal/figures, each as PDF + PNG (1600 dpi) + TIFF (600 dpi, DSH)
 ## =====================================================================
 for (p in c("ggplot2")) if (!requireNamespace(p, quietly = TRUE)) install.packages(p)  # install if missing
@@ -1544,7 +1728,7 @@ sc_meth <- function(drop = FALSE) list(                      # method scales (dr
   scale_linetype_manual(values = meth_lty, labels = meth_lab, drop = drop))
 dodge <- position_dodge(width = 0.12)                         # small horizontal offset on log axis
 
-## ---- save one figure: Yol A ggsave, Yol B base graphics devices ----
+## ---- save one figure: Option A ggsave, Option B base graphics devices ----
 save_fig <- function(p, name, w, h) {
   base <- file.path(fig_dir, name)                            # path without extension
   okA <- tryCatch({
@@ -1554,7 +1738,7 @@ save_fig <- function(p, name, w, h) {
     ggsave(paste0(base, ".tiff"), p, width = w, height = h, units = "in", dpi = 600,
            compression = "lzw")                               # 600 dpi TIFF for DSH
     TRUE }, error = function(e) { message("Yol A failed for ", name, ": ", conditionMessage(e)); FALSE })
-  if (!okA) {                                                 # Yol B: open devices directly
+  if (!okA) {                                                 # Option B: open devices directly
     pdf(paste0(base, ".pdf"), width = w, height = h); print(p); dev.off()
     png(paste0(base, ".png"), width = w, height = h, units = "in", res = 1600); print(p); dev.off()
     tiff(paste0(base, ".tiff"), width = w, height = h, units = "in", res = 600, compression = "lzw"); print(p); dev.off()
@@ -1609,9 +1793,9 @@ f3 <- ggplot(het5, aes(ratio, covered, colour = lang_f, shape = lang_f)) +
        y = "Author-level coverage") + th
 f3 <- if (has_repel) {
   f3 + ggrepel::geom_text_repel(data = lab3, aes(label = short), size = 2.8, show.legend = FALSE,
-                                min.segment.length = 0, seed = 1)   # Yol A: repelled labels
+                                min.segment.length = 0, seed = 1)   # Option A: repelled labels
 } else {
-  f3 + geom_text(data = lab3, aes(label = short), size = 2.8, vjust = -0.9, show.legend = FALSE)  # Yol B
+  f3 + geom_text(data = lab3, aes(label = short), size = 2.8, vjust = -0.9, show.legend = FALSE)  # Option B
 }
 save_fig(f3, "fig4_heterogeneity", 6, 4.2)   # cited after the inflation figure, so it is Figure 4
 
@@ -1620,7 +1804,7 @@ cv <- cb5[cb5$metric == "covered" & cb5$method %in% c("naive", "single_sub"), c(
 cv <- reshape(cv, idvar = c("lang", "L"), timevar = "method", direction = "wide")  # wide by method
 cv$gap <- 100 * (cv$estimate.single_sub - cv$estimate.naive)  # coverage lost by within-novel calibration
 d4 <- rbind(data.frame(lang = cv$lang, L = cv$L, value = cv$gap,
-                       what = "Coverage: book-level minus within-novel calibration"),
+                       what = "Coverage: single subsampling minus within-novel calibration"),  # names the procedure used in the gap
             data.frame(lang = ac5$lang, L = ac5$L, value = 100 * ac5$drop,
                        what = "Accuracy: same-novel minus held-out-novel training"))
 d4 <- prep(d4)
@@ -1632,10 +1816,11 @@ f4 <- ggplot(d4, aes(L, value, shape = what, linetype = what, group = what)) +
   scale_shape_manual(values = c(16, 21)) + scale_linetype_manual(values = c("solid", "dashed")) +
   facet_wrap(~ lang, nrow = 1) + x_len +
   labs(x = "Text length (words)", y = "Inflation (percentage points)") + th +
+  theme(panel.spacing.x = unit(1.2, "lines")) +              # space so 5,000 and 250 labels of adjacent panels do not touch
   guides(shape = guide_legend(nrow = 2), linetype = guide_legend(nrow = 2))
 save_fig(f4, "fig3_inflation", 7, 3.3)        # cited first in Section 3.3, so it is Figure 3
 
-## ---- Fig A1: open set (texts by authors outside the candidate set) ----
+## ---- Fig A1 (Fig. S1 in the manuscript): open set (texts by authors outside the candidate set) ----
 dA <- prep(ob5[ob5$metric %in% c("empty", "false_single"), ])
 dA$metric <- factor(dA$metric, levels = c("empty", "false_single"),
                     labels = c("Empty set (correct rejection)", "Single wrong author"))
