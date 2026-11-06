@@ -1,0 +1,302 @@
+collection,id,author,title,role
+English,ENG18400_Trollope,"Trollope, Frances Milton",The Life and Adventures of Michael Armstrong,outsider
+English,ENG18410_Sinclair,"Sinclair, Catherine","Modern Flirtations: or, A Month at Harrowgate",outsider
+English,ENG18411_Tupper,"Tupper, Martin Farquhar",The Twins: A Domestic Novel,outsider
+English,ENG18440_Disraeli,"Disraeli, Benjamin","Coningsby: or, The New Generation",candidate
+English,ENG18450_Disraeli,"Disraeli, Benjamin","Sybil, Or the Two Nations",candidate
+English,ENG18460_Reynolds,"Reynolds, George William McArthur",The mysteries of London,outsider
+English,ENG18470_Aguilar,"Aguilar, Grace",Home Influence: A Tale for Mothers and Daughters,outsider
+English,ENG18471_Bronte,"Brontë, Emily",Wuthering Heights,outsider
+English,ENG18480_Thackeray,"Thackeray, William Makepeace",Vanity Fair: A Novel without a Hero,outsider
+English,ENG18481_Dickens,"Dickens, Charles",Dombey and Son,candidate
+English,ENG18482_Gaskell,"Gaskell, Elizabeth Cleghorn",Mary Barton: A Tale of Manchester Life,outsider
+English,ENG18490_Skene,"Skene, Felicia",The Inheritance of Evil,outsider
+English,ENG18500_Ainsworth,"Ainsworth, William Harrison","Auriol, or The elixir of life",outsider
+English,ENG18510_Kingsley,"Kingsley, Charles",Yeast: A Problem,outsider
+English,ENG18530_Dickens,"Dickens, Charles",Bleak House,candidate
+English,ENG18531_Yonge,"Yonge, Charlotte Mary",The Heir of Redclyffe,candidate
+English,ENG18540_Dickens,"Dickens, Charles",Hard Times: For These Times,candidate
+English,ENG18551_Trollope,"Trollope, Anthony",The Warden,candidate
+English,ENG18552_Kavanagh,"Kavanagh, Julia",Rachel Gray : ELTec edition,outsider
+English,ENG18560_Yonge,"Yonge, Charlotte Mary",The Daisy Chain,candidate
+English,ENG18570_Bronte,"Brontë, Charlotte",The Professor: A Tale : ELTec edition,outsider
+English,ENG18600_Clive,"Clive, Caroline Wigley",Why Paul Ferroll Killed His Wife,outsider
+English,ENG18610_Eliot,"Eliot, George [pseud.]",Silas Marner: The Weaver of Raveloe,candidate
+English,ENG18621_Braddon,"Braddon, Mary Elizabeth",Lady Audley's Secret,outsider
+English,ENG18630_Craik,"Craik, Dinah Maria",Mistress and Maid,outsider
+English,ENG18632_Reade,"Reade, Charles",Hard Cash. A matter of fact romance : ELTec edition,outsider
+English,ENG18640_Blackmore,"Blackmore, Richard Doddridge",Clara Vaughan,outsider
+English,ENG18641_Stretton,"Stretton, Hesba [pseud Sara Smith]",Fern's Hollow : ELTec edition,outsider
+English,ENG18650_Trollope,"Trollope, Anthony",Can You Forgive Her?,candidate
+English,ENG18651_Yonge,"Yonge, Charlotte Mary",The Clever Woman of the Family,candidate
+English,ENG18652_Carroll,"Carroll, Lewis [pseud.]",Alice's Adventures in Wonderland,outsider
+English,ENG18660_Eliot,"Eliot, George [pseud.]","Felix Holt, the Radical",candidate
+English,ENG18661_Oliphant,"Oliphant, Margaret",Miss Marjoribanks : ELTec edition,outsider
+English,ENG18670_Ouida,"Ouida, [pseud.]",Under Two Flags: A Story of the Household and the Desert,candidate
+English,ENG18700_Oliphant,"Oliphant, Laurence",Piccadilly,outsider
+English,ENG18702_Jenkins,"Jenkins, John Edward",Ginx's Baby: His Birth and Other Misfortunes : ELTec edition,outsider
+English,ENG18720_Lynn,"Linton, Elizabeth Lynn",The True History of Joshua Davidson,outsider
+English,ENG18721_Eliot,"Eliot, George [pseud.]",Middlemarch,candidate
+English,ENG18740_Ouida,"Ouida, [pseud.]",Two Little Wooden Shoes: A Sketch,candidate
+English,ENG18741_Bulwer,"Lytton, Edward Bulwer",The Parisians,outsider
+English,ENG18742_Trollope,"Trollope, Anthony",Harry Heathcote of Gangoil : ELTec edition,candidate
+English,ENG18760_Collins,"Collins, Wilkie",The Two Destinies: A Romance,outsider
+English,ENG18770_Mallock,"Mallock, William Hurrell",The New Republic,outsider
+English,ENG18800_Disraeli,"Disraeli, Benjamin",Endymion,candidate
+English,ENG18820_Anstey,"Anstey, F. [pseud.]","Vice Versa: or, A Lesson to Fathers",outsider
+English,ENG18830_Broughton,"Broughton, Rhoda",Belinda: A Novel,candidate
+English,ENG18831_Ouida,"Ouida, [pseud.]",Folle-Farine,candidate
+English,ENG18840_Lee,"Lee, Vernon",Miss Brown,outsider
+English,ENG18850_Rutherford,"White, William Hale",Mark Rutherford's Deliverance : ELTec edition,outsider
+English,ENG18860_Hardy,"Hardy, Thomas","The Mayor of Casterbridge: The Life and Death of a Man of Character : ELTeC
+     edition",outsider
+English,ENG18870_Barry,"Barry, William Francis",The New Antigone: A Romance,outsider
+English,ENG18871_Broughton,"Broughton, Rhoda",Red as a rose is she,candidate
+English,ENG18872_Lyall,"Lyall, Edna [pseud.]",The Autobiography of a Slander,outsider
+English,ENG18880_Ward,"Ward, Humphry, Mrs.",Robert Elsmere : ELTec edition,candidate
+English,ENG18890_Nesbit,"Nesbit, Edith",The Prophet's Mantle,candidate
+English,ENG18900_Doyle,"Doyle, Arthur Conan",The Sign of Four,outsider
+English,ENG18901_Broughton,"Broughton, Rhoda",Alas! A Novel,candidate
+English,ENG18910_Yeats,"Yeats, William Butler",John Sherman and Dhoya,outsider
+English,ENG18911_Gissing,"Gissing, George",New Grub Street: A Novel,outsider
+English,ENG18920_Grossmith,"Grossmith, George",The diary of a nobody,outsider
+English,ENG18930_Benson,"Benson, Edward Frederic",Dodo: A Detail of the Day,outsider
+English,ENG18931_Harraden,"Harraden, Beatrice",Ships that Pass in the Night : ELTec edition,outsider
+English,ENG18940_Dixon,"Dixon, Ella Hepworth",The Story of a Modern Woman,outsider
+English,ENG18941_Caird,"Caird, Mona",The Daughters of Danaus,outsider
+English,ENG18950_Cross,"Cross, Victoria",The Woman Who Didn't,outsider
+English,ENG18951_Ward,"Ward, Humphry, Mrs.",The Story of Bessie Costrell,candidate
+English,ENG18952_Wells,"Wells, Herbert George",The Time Machine: An Invention,candidate
+English,ENG18953_Macdonald,"MacDonald, George",Lilith; A Romance : ELTec edition,outsider
+English,ENG18954_Sharp,"Sharp, Evelyn",At the Relton Arms : ELTec edition,outsider
+English,ENG18960_Malet,"Malet, Lucas",The Carissima,outsider
+English,ENG18961_Griffiths,"Griffiths, Major Arthur George Frederick",The Rome Express,outsider
+English,ENG18970_Phillpots,"Phillpotts, Eden",Lying Prophets,outsider
+English,ENG18972_Morris,"Morris, William",The water of the wondrous isles,outsider
+English,ENG18973_Cholmondeley,"Cholmondeley, Mary",A Devotee: An Episode in the Life of a Butterfly : ELTec edition,outsider
+English,ENG18980_BaringGould,"Baring-Gould, Sabine",Domitia,outsider
+English,ENG19001_Glyn,"Glyn, Elinor",The Visits of Elizabeth,outsider
+English,ENG19004_Fowler,"Fowler, Ellen Thorneycroft",The Farringdons,outsider
+English,ENG19005_Steel,"Steel, Flora Annie",The Hosts of the Lord,outsider
+English,ENG19010_Mason,"Mason, Alfred Edward Woodley",Clementina,outsider
+English,ENG19011_Jerome,"Jerome, Jerome K.",The Observations of Henry : ELTec edition,outsider
+English,ENG19020_Nesbit,"Nesbit, Edith",The Red House,candidate
+English,ENG19060_Nesbit,"Nesbit, Edith",The Story of the Amulet,candidate
+English,ENG19070_Machen,"Machen, Arthur",The Hill of Dreams,outsider
+English,ENG19071_Silberrad,"Silberrad, Una Lucy",The good comrade,outsider
+English,ENG19080_Chesterton,"Chesterton, Gilbert Keith",The man who was Thursday,outsider
+English,ENG19090_Wells,"Wells, Herbert George",Tono-bungay,candidate
+English,ENG19091_Ward,"Ward, Humphry, Mrs.","Daphne, or Marriage a la Mode",candidate
+English,ENG19100_Forster,"Forster, Edward Morgan",Howards End,outsider
+English,ENG19111_Hornung,"Hornung, Ernest William",The Camera Fiend,outsider
+English,ENG19120_Wells,"Wells, Herbert George",Marriage,candidate
+English,ENG19121_Belloc,"Belloc-Lowndes, Marie",The Chink in the Armour : ELTec edition,outsider
+English,ENG19150_Buchan,"Buchan, John",The Thirty-nine Steps,outsider
+English,ENG19170_Conrad,"Conrad, Joseph",The shadow-line: ELTec edition,outsider
+English,ENG19180_Lewis,"Lewis, Percy Wyndham",Tarr,outsider
+English,ENG19181_West,"West, Rebecca [pseud. Cicily Isabel Fairfield]",The Return of the Soldier : ELTec edition,outsider
+English,ENG19190_Benson,"Benson, Stella",Living Alone,outsider
+English,ENG19191_Hamilton,"Hamilton, Cicely",William — an Englishman,outsider
+English,ENG19192_Woolf,"Woolf, Virginia",Night and day,outsider
+English,ENG19200_Lawrence,"Lawrence, David Herbert",Women in love,outsider
+English,ENG19201_Arlen,"Arlen, Michael [pseud.]",The London venture,outsider
+French,FRA00101_Adam,Adam,Mon Village,candidate
+French,FRA00102_Adam,Adam,Païenne,candidate
+French,FRA00201_Audoux,Audoux,Marie-Claire,outsider
+French,FRA00301_Aimard,Aimard,Les Trappeurs de l'Arkansas,candidate
+French,FRA00302_Aimard,Aimard,Belle rivière,candidate
+French,FRA00401_Allais,Allais,Le Captain Cap,outsider
+French,FRA00501_Balzac,Balzac,Albert Savarus,candidate
+French,FRA00502_Balzac,Balzac,Le cousin Pons,candidate
+French,FRA00503_Balzac,Balzac,Le curé de village,candidate
+French,FRA00601_Boisgobey,Boisgobey,Le crime de l'omnibus,candidate
+French,FRA00602_Boisgobey,Boisgobey,Rubis sur l'ongle,candidate
+French,FRA00701_Carraud,Carraud,La petite Jeanne,outsider
+French,FRA00801_Dash,Dash,Le château de Pinon I,outsider
+French,FRA00901_Daudet,Daudet,Le petit chose,outsider
+French,FRA01002_DelarueMardrus,DelarueMardrus,Toutoune et son amour,outsider
+French,FRA01101_Dombre,Dombre,Une pupille gênante,candidate
+French,FRA01102_Dombre,Dombre,Folla,candidate
+French,FRA01201_Feval,Feval,Le Cavalier Fortune,candidate
+French,FRA01202_Feval,Feval,Les Errants de la nuit,candidate
+French,FRA01203_Feval,Feval,Le Loup blanc,candidate
+French,FRA01301_Flaubert,Flaubert,L'Éducation sentimentale,candidate
+French,FRA01302_Flaubert,Flaubert,Madame Bovary,candidate
+French,FRA01303_Flaubert,Flaubert,Salammbô,candidate
+French,FRA01401_Fleuriot,Fleuriot,Un enfant gâté,candidate
+French,FRA01402_Fleuriot,Fleuriot,En congé,candidate
+French,FRA01403_Fleuriot,Fleuriot,Alberte,candidate
+French,FRA01501_France,France,Les dieux ont soif,outsider
+French,FRA01601_GautierJ,GautierJ,La Sœur du Soleil (L'Usurpateur),candidate
+French,FRA01602_GautierJ,GautierJ,Fleurs d'Orient,candidate
+French,FRA01603_GautierJ,GautierJ,Les Princesses d'Amour : courtisanes japonaises,candidate
+French,FRA01701_GautierT,GautierT,Militona,outsider
+French,FRA01801_Gay,Gay,Ellenore,outsider
+French,FRA01902_Gaboriau,Gaboriau,Monsieur Lecoq,outsider
+French,FRA02001_Gilbert,Gilbert,Vers le pôle en aéroplane,outsider
+French,FRA02101_Girardin,Girardin,"Marguerite, ou Deux amours",outsider
+French,FRA02201_Gouraud,Gouraud,Quand je serai grande,candidate
+French,FRA02202_Gouraud,Gouraud,Le petit colporteur,candidate
+French,FRA02203_Gouraud,Gouraud,Les Filles du professeur,candidate
+French,FRA02301_Greville,Greville,La seconde mère,candidate
+French,FRA02302_Greville,Greville,L'amie,candidate
+French,FRA02303_Greville,Greville,Ariadne,candidate
+French,FRA02401_LeRouge,LeRouge,L'Esclave amoureuse,outsider
+French,FRA02501_Loti,Loti,Mon frère Yves,outsider
+French,FRA02601_Malot,Malot,Romain Kalbris,candidate
+French,FRA02602_Malot,Malot,Sans famille,candidate
+French,FRA02603_Malot,Malot,Conscience,candidate
+French,FRA02701_Maupassant,Maupassant,Bel-Ami,candidate
+French,FRA02702_Maupassant,Maupassant,Une Vie,candidate
+French,FRA02802_Mirbeau,Mirbeau,La Maréchale,outsider
+French,FRA02901_Noailles,Noailles,La nouvelle espérance,outsider
+French,FRA03001_Ohnet,Ohnet,La Grande Marnière,candidate
+French,FRA03002_Ohnet,Ohnet,L'Âme de Pierre,candidate
+French,FRA03003_Ohnet,Ohnet,Le Marchand de Poison,candidate
+French,FRA03101_Ponson,Ponson,La baronne trépassée,outsider
+French,FRA03201_Blandy,Blandy,Rouzétou,outsider
+French,FRA03302_Rattazzi,Rattazzi,Le piège aux maris,outsider
+French,FRA03401_Reybaud,Reybaud,Mademoiselle de Malepeire,outsider
+French,FRA03601_Proust,Proust,Du côté de chez Swann,outsider
+French,FRA03701_Sand,Sand,Nanon,candidate
+French,FRA03702_Sand,Sand,Le dernier amour,candidate
+French,FRA03704_Sand,Sand,Horace,candidate
+French,FRA03802_Stern,Stern,Nélida,outsider
+French,FRA03903_Stolz,Stolz,Le Secret de Laurent,outsider
+French,FRA04001_Verne,Verne,Un capitaine de quinze ans,candidate
+French,FRA04002_Verne,Verne,Le Secret de Wilhelm Storitz,candidate
+French,FRA04102_Erckmann,Erckmann,"Madame Thérèse, ou les volontaires de 92",outsider
+French,FRA04202_Rolland,Rolland,Jean-Christophe,outsider
+French,FRA04301_Achard,Achard,Belle-Rose,outsider
+French,FRA04401_Barbusse,Barbusse,Le Feu,outsider
+French,FRA04501_Barres,Barres,Colette Baudoche,outsider
+French,FRA04601_Bazin,Bazin,Le blé qui lève,outsider
+French,FRA04701_Bourget,Bourget,Laurence Albani,outsider
+French,FRA04801_Corday,Corday,Les révélées,outsider
+French,FRA04901_Dumas,Dumas,Reine Margot,outsider
+French,FRA05101_Eekhoud,Eekhoud,L'autre vue,outsider
+French,FRA05201_Feuillet,Feuillet,La petite Comtesse,outsider
+French,FRA05301_Galopin,Galopin,Le Docteur Omega,outsider
+French,FRA05401_Kock,Kock,Madeleine,outsider
+French,FRA05501_Lermina,Lermina,L'effrayante aventure,outsider
+French,FRA05602_Lesueur,Lesueur,Masque d'Amour,outsider
+French,FRA05702_Maquet,Maquet,La Maison du baigneur,outsider
+French,FRA05801_Mille,Mille,Louise et Barnavaux,outsider
+French,FRA05901_Moselly,Moselly,Terres lorraines,outsider
+French,FRA06001_Rebell,Rebell,Les Nuits chaudes du Cap français,outsider
+French,FRA06101_Sandeau,Sandeau,Mademoiselle de la Seiglière,outsider
+French,FRA06201_Viel-Castel,Viel-Castel,Archambaud de Comborn,outsider
+French,FRA06301_Montepin,Montepin,La porteuse de pain,outsider
+French,FRA06401_Chandeneux,Chandeneux,Les Ménages militaires,outsider
+French,FRA06501_Gyp,Gyp,Totote,outsider
+French,FRA06601_Peladan,Peladan,"Modestie et vanité, roman (La décadence latine, éthopée, XVI)",outsider
+French,FRA06701_Uchard,Uchard,La Buveuse de perles,outsider
+French,FRA06801_Vaillant,Vaillant,L'Elzévir de maroquin rouge,outsider
+French,FRA06901_Vignon,Vignon,Révoltée !,outsider
+French,FRA07001_Mendes,Mendes,Lucignole,outsider
+French,FRA07101_Blondel,Blondel,"Élise, ou l'éducation particulière",outsider
+French,FRA07201_Montagne,Montagne,Les Affamés de Londres,outsider
+French,FRA07301_Valgand,Valgand,"Blondine, roman nouveau",outsider
+French,FRA07401_Leblanc,Leblanc,813 (Huit-Cent-Treize),outsider
+French,FRA07501_Darien,Darien,Le Voleur,outsider
+French,FRA07601_Leroux,Leroux,La Reine du Sabbat,outsider
+German,DEU001,"Willkomm, Ernst Adolf",Weisse Sclaven oder die Leiden des Volkes,outsider
+German,DEU002,"Auerbach, Berthold",Der Lehnhold,candidate
+German,DEU003,"Ruppius, Otto",Der Pedlar,candidate
+German,DEU004,"Otto, Louise",Nürnberg. Zweiter Band,outsider
+German,DEU005,"Kurz, Hermann",Der Sonnenwirt,outsider
+German,DEU006,"Weerth, Georg",Fragment eines Romans,outsider
+German,DEU007,"Stifter, Adalbert",Die Mappe meines Urgroßvaters,candidate
+German,DEU008,"Auerbach, Berthold",Der Lautenbacher,candidate
+German,DEU009,"Ruppius, Otto",Das Vermächtnis des Pedlars,candidate
+German,DEU010,"Aston, Louise",Lydia,candidate
+German,DEU011,"Freytag, Gustav",Soll und Haben,candidate
+German,DEU012,"Aston, Louise",Aus dem Leben einer Frau,candidate
+German,DEU013,"Auerbach, Berthold",Barfüßele,candidate
+German,DEU014,"Tieck, Ludwig",Vittoria Accorombona,outsider
+German,DEU015,"Arnim, Bettina von",Die Günderode,candidate
+German,DEU016,"Gerstäcker, Friedrich",Die Regulatoren in Arkansas. Aus dem Waldleben Amerikas,outsider
+German,DEU017,"Stifter, Adalbert",Die Narrenburg,candidate
+German,DEU018,"Schopenhauer, Adele",Anna,outsider
+German,DEU019,"Stifter, Adalbert",Zwei Schwestern,candidate
+German,DEU020,"Hahn-Hahn, Ida Gräfin von",Sibylle,outsider
+German,DEU021,"Lewald, Fanny",Jenny,outsider
+German,DEU022,"Arnim, Bettina von",Clemens Brentanos Frühlingskranz,candidate
+German,DEU023,"Stifter, Adalbert",Feldblumen,candidate
+German,DEU024,"Gutzkow, Karl",Der Zauberer von Rom,outsider
+German,DEU025,"Kürnberger, Ferdinand",Der Amerika-Müde,outsider
+German,DEU026,"Vischer, Friedrich Theodor",Auch Einer 2,candidate
+German,DEU027,"Ebner-Eschenbach, Marie von",Bozena,candidate
+German,DEU028,"François, Louise von",Die letzte Reckenburgerin,candidate
+German,DEU029,"Raabe, Wilhelm",Alte Nester,candidate
+German,DEU030,"Freytag, Gustav",Die verlorene Handschrift,candidate
+German,DEU031,"Raabe, Wilhelm",Der Schüdderump,candidate
+German,DEU032,"Meyer, Conrad Ferdinand",Jürg Jenatsch,outsider
+German,DEU033,"François, Louise von",Die Geschichte meines Urgroßvaters,candidate
+German,DEU034,"Vischer, Friedrich Theodor",Auch Einer 1,candidate
+German,DEU035,"Fontane, Theodor",Vor dem Sturm,candidate
+German,DEU036,"Keller, Gottfried",Der grüne Heinrich2 [Zweite Fassung],outsider
+German,DEU037,"Marlitt, Eugenie",Das Heideprinzeßchen,candidate
+German,DEU038,"Raabe, Wilhelm",Der Hungerpastor,candidate
+German,DEU039,"Spielhagen, Friedrich",Problematische Naturen. Erste Abtheilung,candidate
+German,DEU040,"Marlitt, Eugenie",Goldelse,candidate
+German,DEU041,"Marlitt, Eugenie",Das Geheimnis der alten Mamsell,candidate
+German,DEU042,"Möllhausen, Balduin",Die Mandanenwaise,outsider
+German,DEU043,"Spielhagen, Friedrich",Hammer und Amboß,candidate
+German,DEU044,"Dahn, Felix",Kampf um Rom,outsider
+German,DEU045,"Stifter, Adalbert",Witiko,candidate
+German,DEU046,"Fontane, Theodor",Grete Minde,candidate
+German,DEU047,"François, Louise von",Judith die Kluswirtin,candidate
+German,DEU048,"Freytag, Gustav",Die Ahnen,candidate
+German,DEU049,"Raabe, Wilhelm","Die Leute aus dem Walde, ihre Sterne, Wege und Schicksale",candidate
+German,DEU050,"Raabe, Wilhelm",Abu Telfan oder Die Heimkehr vom Mondgebirge,candidate
+German,DEU051,"Fontane, Theodor",Unterm Birnbaum,candidate
+German,DEU052,"Spyri, Johanna",Heidis Lehr- und Wanderjahre,outsider
+German,DEU053,"Fontane, Theodor",Graf Petöfy,candidate
+German,DEU054,"May, Karl",Am Jenseits,candidate
+German,DEU055,"Bahr, Hermann",Die gute Schule,outsider
+German,DEU056,"Conradi, Hermann",Adam Mensch,outsider
+German,DEU057,"Dohm, Hedwig",Sibilla Dalmar,candidate
+German,DEU058,"Ebner-Eschenbach, Marie von","Lotti, die Uhrmacherin",candidate
+German,DEU059,"Fontane, Theodor","Irrungen, Wirrungen",candidate
+German,DEU060,"Janitschek, Maria",Die Amazonenschlacht,candidate
+German,DEU061,"Bleibtreu, Karl",Größenwahn,outsider
+German,DEU062,"Polenz, Wilhelm von",Der Büttnerbauer,outsider
+German,DEU063,"Dohm, Hedwig",Wie Frauen werden,candidate
+German,DEU064,"Christen, Ada",Jungfer Mutter,outsider
+German,DEU065,"Spielhagen, Friedrich",Zum Zeitvertreib,candidate
+German,DEU066,"Fontane, Theodor",Der Stechlin,candidate
+German,DEU067,"Ganghofer, Ludwig",Schloß Hubertus,candidate
+German,DEU068,"Spitteler, Carl",Conrad,outsider
+German,DEU069,"Kretzer, Max",Meister Timpe,outsider
+German,DEU070,"Fontane, Theodor",Schach von Wuthenow,candidate
+German,DEU071,"Fontane, Theodor",Cécile,candidate
+German,DEU072,"Raabe, Wilhelm",Im alten Eisen,candidate
+German,DEU073,"Dohm, Hedwig",Schicksale einer Seele,candidate
+German,DEU074,"Boy-Ed, Ida",Fanny Förster,outsider
+German,DEU075,"Janitschek, Maria",Ninive,candidate
+German,DEU076,"Wassermann, Jakob",Caspar Hauser,outsider
+German,DEU077,"Reventlow, Franziska Gräfin zu",Ellen Olestjerne,candidate
+German,DEU078,"Essig, Hermann",Der Taifun,outsider
+German,DEU079,"Rilke, Rainer Maria",Die Aufzeichnungen des Malte Laurids Brigge,outsider
+German,DEU080,"Keyserling, Eduard von",Dumala,candidate
+German,DEU081,"May, Karl",Und Friede auf Erden!,candidate
+German,DEU082,"Braun, Lily",Lebenssucher,outsider
+German,DEU083,"Sack, Gustav",Paralyse,outsider
+German,DEU084,"May, Karl",Ardistan und Dschinnistan II,candidate
+German,DEU085,"Ganghofer, Ludwig",Der Ochsenkrieg,candidate
+German,DEU086,"Meysenbug, Malwida Freiin von",Himmlische und irdische Liebe,outsider
+German,DEU087,"Heyking, Elisabeth von","Briefe, die ihn nicht erreichten",outsider
+German,DEU088,"Fontane, Theodor",Mathilde Möhring,candidate
+German,DEU089,"Wille, Bruno",Die Abendburg,outsider
+German,DEU090,"Reventlow, Franziska Gräfin zu",Von Paul zu Pedro,candidate
+German,DEU091,"Schnitzler, Arthur",Casanovas Heimfahrt,candidate
+German,DEU092,"Sudermann, Hermann",Jons und Erdme,outsider
+German,DEU093,"Christ, Lena",Madam Bäurin,candidate
+German,DEU094,"Schnitzler, Arthur",Der Weg ins Freie,candidate
+German,DEU095,"Ball, Hugo",Flammetti,outsider
+German,DEU096,"Meyrink, Gustav",Der Golem,outsider
+German,DEU097,"Keyserling, Eduard von",Wellen,candidate
+German,DEU098,"Reventlow, Franziska Gräfin zu",Herrn Dames Aufzeichnungen,candidate
+German,DEU099,"Christ, Lena",Mathias Bichler,candidate
+German,DEU100,"Ebner-Eschenbach, Marie von",Agave,candidate
